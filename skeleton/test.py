@@ -1,10 +1,20 @@
 from assignment_12 import *
 # test if using Scan get_next() gets the copy of input
-testScan = Scan(filepath="../data/friends.txt")
-testSelect = Select(input=testScan, user_attr=0,value = 1)
+
+def testPredicate1(input):
+    return input[0] == 1
+
+def testPredicate2(input):
+    return input[1] == 1
+
+testScan1 = Scan(filepath="../data/test1.txt")
+testScan2 = Scan(filepath="../data/test2.txt")
+testSelect1 = Select(input=testScan1, predicate=testPredicate1)
+testSelect2 = Select(input = testScan2,predicate=testPredicate2)
+testJoin = Join(left_input=testSelect1, right_input=testSelect2,left_join_attribute=1,right_join_attribute=0)
 
 outF = open("test.txt","w")
-for t in testSelect.get_next():
+for t in testJoin.get_next():
     
     line = ' '.join(str(x) for x in t.tuple)
     outF.write(line+"\n" )

@@ -156,13 +156,31 @@ class Join(Operator):
                                                 propagate_prov=False):
         super(Join, self).__init__(name="Join", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the fields
+        self.left_input = left_input
+        self.right_input = right_input
+        self.left_join_attribute = left_join_attribute
+        self.right_join_attribute = right_join_attribute
+        
 
     # Returns next batch of joined tuples (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        # First, we load up all the tuples from the left input into the hash table
+        hashtable = dict()
+        for l in self.left_input.get_next():
+            key = l.tuple[self.left_join_attribute]
+            if key in hashtable:
+                hashtable[l.tuple[self.left_join_attribute]].append(l.tuple)
+            else:
+                hashtable[key] = [l.tuple]
+        # Then for each tuple in the right input, we match and yield the joined output tuple
+        for r in self.right_input.get_next():
+            key = r.tuple[self.right_join_attribute]
+            if key in hashtable:
+                for l in hashtable[key]:
+                    output = list(l)
+                    output.extend(list(r.tuple))
+                    yield ATuple(tuple=tuple(output),operator=self)
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
@@ -194,13 +212,25 @@ class Project(Operator):
                                                  propagate_prov=False):
         super(Project, self).__init__(name="Project", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the fields
+        self.input = input
+        self.fields_to_keep=fields_to_keep
 
     # Return next batch of projected tuples (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        for t in self.input.get_next():
+            # convert to lst
+            lst = list(t.tuple)
+            # get a list of fields to remove, and then delete those fields
+            fields_to_remove = [i for i in range(len(lst)) if i not in self.fields_to_keep]
+            for idx in sorted(fields_to_remove, reverse= True):
+                del lst[idx]
+
+            # convert back to tuple and yield
+            t.tuple = tuple(lst)
+            t.operator=self
+            yield t
+        
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
@@ -228,12 +258,15 @@ class GroupBy(Operator):
         annotations (True) or not (False).
     """
     # Initializes average operator
-    def __init__(self, input, key, value, agg_gun, track_prov=False,
+    def __init__(self, input, key, value, agg_fun, track_prov=False,
                                                    propagate_prov=False):
-        super(Average, self).__init__(name="GroupBy", track_prov=track_prov,
+        super(GroupBy, self).__init__(name="GroupBy", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the field
+        self.input = input
+        self.key = key
+        self.value = value
+        self.agg_fun = agg_fun
 
     # Returns aggregated value per distinct key in the input (or None if done)
     def get_next(self):
@@ -357,28 +390,28 @@ class Select(Operator):
 
     Attributes:
         input (Operator): A handle to the input.
-        user_attr (int): a user defined index of the attribute needs to be filtered
-        value (int): value associates with the user defined attribute and satisfies the predicate
+        predicate (function): The selection predicate.
         track_prov (bool): Defines whether to keep input-to-output
         mappings (True) or not (False).
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
     # Initializes select operator
-    def __init__(self, input, user_attr, value, track_prov=False,
+    def __init__(self, input, predicate, track_prov=False,
                                          propagate_prov=False):
         super(Select, self).__init__(name="Select", track_prov=track_prov,
                                      propagate_prov=propagate_prov)
         # Initialize the field
         self.input = input
-        self.user_attr = user_attr
-        self.value = value
+        self.predicate = predicate
 
     # Returns next batch of tuples that pass the filter (or None if done)
     def get_next(self):
         # fetch the batch from scanned input, 
         for atuple in self.input.get_next():
-            if atuple is not None and atuple.tuple[self.user_attr] == self.value:
+            # verify if the tuple satisfies the predicate
+            if atuple is not None and self.predicate(atuple.tuple):
+                atuple.operator= self
                 yield atuple
 
         
