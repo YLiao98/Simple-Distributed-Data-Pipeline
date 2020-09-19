@@ -104,13 +104,25 @@ class Scan(Operator):
                                               propagate_prov=False):
         super(Scan, self).__init__(name="Scan", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the fields
+        self.filepath = filepath
+        self.filter = filter
 
     # Returns next batch of tuples in given file (or None if file exhausted)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        # process each line from the file to a tuple
+        with open(self.filepath,"r") as f:
+            for row in f:
+                int_row = [int(x) for x in row.split(' ')]
+                t = ATuple(tuple=tuple(int_row),operator=self)
+
+                if t.tuple is not None and (self.filter is None or self.filter(t.tuple)):
+                    # 
+                    # yield simplifies the process, which allows us to return a value
+                    # and then continue when we get the next call.
+                    yield t
+        f.close()
+            
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
@@ -345,24 +357,31 @@ class Select(Operator):
 
     Attributes:
         input (Operator): A handle to the input.
-        predicate (function): The selection predicate.
+        user_attr (int): a user defined index of the attribute needs to be filtered
+        value (int): value associates with the user defined attribute and satisfies the predicate
         track_prov (bool): Defines whether to keep input-to-output
         mappings (True) or not (False).
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
     # Initializes select operator
-    def __init__(self, input, predicate, track_prov=False,
+    def __init__(self, input, user_attr, value, track_prov=False,
                                          propagate_prov=False):
-        super(Filter, self).__init__(name="Select", track_prov=track_prov,
+        super(Select, self).__init__(name="Select", track_prov=track_prov,
                                      propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the field
+        self.input = input
+        self.user_attr = user_attr
+        self.value = value
 
     # Returns next batch of tuples that pass the filter (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        # fetch the batch from scanned input, 
+        for atuple in self.input.get_next():
+            if atuple is not None and atuple.tuple[self.user_attr] == self.value:
+                yield atuple
+
+        
 
 
 if __name__ == "__main__":
