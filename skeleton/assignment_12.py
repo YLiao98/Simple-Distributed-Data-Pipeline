@@ -270,8 +270,35 @@ class GroupBy(Operator):
 
     # Returns aggregated value per distinct key in the input (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        if self.key == None:            
+            # first we set up an appropriate init value for aggregate
+            aggr = []
+            # then for each tuple, we update the tuple 
+            for atuple in self.input.get_next():
+                aggr.append(int(atuple.tuple[self.value]))
+            # let aggregate function handle the aggregated data and convert to a tuple
+            aggr_res = [self.agg_fun(aggr)]
+            res = tuple(aggr_res)
+            output = ATuple(tuple = res, operator = self)
+            yield output
+        else:
+            # for each key of the group by attribute, we should return a 2-tuple(key, aggr_val)
+            # where aggregate value is the value of the aggregate for the qgourp of tuples corresponding to the key
+            # use a dict to keep track of all groups
+            aggr = dict()
+
+            for t in self.input.get_next():
+                g_attr = t.tuple[self.key]
+                # initialize it if not in the dictionary
+                if g_attr not in aggr:
+                    aggr[g_attr] = []
+                # for that attribute, update the corresponding aggregate value
+                aggr[g_attr].append(int(t.tuple[self.value]))
+            # pass it to aggregate function and return output tuple one by one
+            for g_attr in aggr:
+                output = tuple(g_attr, int(self.agg_fun(aggr[g_attr])))
+                yield ATuple(tuple=output,operator=self)
+
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
