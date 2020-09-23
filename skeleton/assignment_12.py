@@ -122,8 +122,7 @@ class Scan(Operator):
                     # and then continue when we get the next call.
                     yield t
         f.close()
-            
-
+        
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
