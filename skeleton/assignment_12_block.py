@@ -270,15 +270,6 @@ class Project(Operator):
         annotations (True) or not (False).
     """
 
-    """class variable:
-    curr:current position at joinedtuples
-    batch_size: size of output from get_next()
-    end_of_batch: bool var to tell if we are at the end of batch
-    lst: get the list of batch from input
-    """
-
-    end_of_batch = False
-    lst = []
     # Initializes project operator
     def __init__(self, input, fields_to_keep=[], track_prov=False,
                                                  propagate_prov=False):
@@ -291,29 +282,27 @@ class Project(Operator):
     # Return next batch of projected tuples (or None if done)
     def get_next(self):
         logger.debug("Project: at get_next()")
+        lst = []
         # if upstream pass None, return None
         next_batch = self.input.get_next()
         if next_batch == None: return None
         # if fields to keep is empty, we assign to batch directly to list
         if self.fields_to_keep == []:
-            self.lst = next_batch
-        for t in next_batch:
-            # convert to lst
-            l= list(t.tuple)
-            # get a list of fields to remove, and then delete those fields
-            fields_to_remove = [i for i in range(len(l)) if i not in self.fields_to_keep]
-            for idx in sorted(fields_to_remove, reverse= True):
-                del l[idx]
+            lst = next_batch
+        if lst == []:
+            for t in next_batch:
+                # convert to lst
+                l= list(t.tuple)
+                # get a list of fields to remove, and then delete those fields
+                fields_to_remove = [i for i in range(len(l)) if i not in self.fields_to_keep]
+                for idx in sorted(fields_to_remove, reverse= True):
+                    del l[idx]
 
-            # convert back to tuple and yield
-            t.tuple = tuple(l)
-            t.operator=self
-            self.lst.append(t)
-        
-        batch = self.lst
-        # reset lst so we can process next batch
-        self.lst=[]
-        return batch
+                # convert back to tuple and yield
+                t.tuple = tuple(l)
+                t.operator=self
+                lst.append(t)
+        return lst
         
 
     # Returns the lineage of the given tuples
