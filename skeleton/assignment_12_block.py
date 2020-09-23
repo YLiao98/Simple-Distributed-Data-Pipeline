@@ -120,12 +120,18 @@ class Scan(Operator):
         self.filter = filter
     # retrieve the file
     def get_file(self):
-        lst = []
-        with open(self.filepath,"r",newline = '') as f:
-            reader = csv.reader(f,delimiter=' ')
-            lst = list(reader)
-        f.close()
-        return lst
+        try:
+            lst = []
+            if not self.filepath:
+                raise ValueError("empty filepath")
+            with open(self.filepath,"r",newline = '') as f:
+                reader = csv.reader(f,delimiter=' ')
+                lst = list(reader)
+            f.close()
+            return lst
+        except ValueError as e:
+            logger.error(e)
+
 
     # Returns next batch of tuples in given file (or None if file exhausted)
     def get_next(self):
@@ -224,7 +230,7 @@ class Join(Operator):
                     else:
                         self.hashtable[key] = [r.tuple]
             logger.debug("right input done")
-            # Then for each tuple in the right input, we match and yield the joined output tuple to batch
+            # Then for each tuple in the left input, we match and yield the joined output tuple to batch
             while(not self.left_input.input.end_of_file):
                 for l in self.left_input.get_next():
                     key = l.tuple[self.left_join_attribute]
@@ -511,18 +517,26 @@ class Select(Operator):
 
     # Returns next batch of tuples that pass the filter (or None if done)
     def get_next(self):
-
-        logger.debug("Select: at get_next()")
-        # fetch the batch from scanned input, process each tuple to a new batch
-        batch = []
-        block= self.input.get_next()
-        # process each block of tuples
-        for atuple in block:
-            # verify if the tuple satisfies the predicate
-            if atuple is not None and self.predicate(atuple.tuple):
-                atuple.operator= self
-                batch.append(atuple)
-        return batch
+        try:
+            logger.debug("Select: at get_next()")
+            # throw exception if we don't have predicate function available
+            if not self.predicate:
+                raise ValueError("no predicate function")
+            # fetch the batch from scanned input, process each tuple to a new batch
+            batch = []
+            block= self.input.get_next()
+            # if nothing from input, return None
+            if block == None:
+                return None
+            # process each block of tuples
+            for atuple in block:
+                # verify if the tuple satisfies the predicate
+                if atuple is not None and self.predicate(atuple.tuple):
+                    atuple.operator= self
+                    batch.append(atuple)
+            return batch
+        except ValueError as e:
+            logger.error(e)
 
         
 
