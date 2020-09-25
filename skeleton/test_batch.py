@@ -1,7 +1,7 @@
 from assignment_12_block import *
 import time
 # test if we scan a batch of tuples from a file
-
+"""
 def testPredicate1(input):
     return input[0] == 1
 
@@ -24,6 +24,7 @@ while(not testProject.input.end_of_file):
 outF.close()
 print("----%s seconds ---" % (time.time()-start_time))
 
+"""
 """
 #test select process, from friends select where f.id1 = 1 
 start_time = time.time()
@@ -74,7 +75,7 @@ outF.close()
 
 print("----%s seconds ---" % (time.time()-start_time))
 """
-"""
+
 # test groupby process, from friends, movies select * where f.id1 = 1 and m.mid = 1 and f.id1 = m.uid
 start_time = time.time()
 
@@ -103,6 +104,27 @@ while(not testGroupby.input.end_of_batch):
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
             outF.write(line+"\n" )
+outF.close()
+
+print("----%s seconds ---" % (time.time()-start_time))
+
+"""
+start_time = time.time()
+
+def testAGGR(input):
+    return round(sum(input)/len(input))
+
+testScan1 = Scan(filepath="../data/movie_ratings.txt")
+
+
+testGroupby = GroupBy(input= testScan1, key=None,value = 2,agg_fun=testAGGR)
+outF = open("testgroupby.txt","w")
+
+batch = testGroupby.get_next()
+if batch != None:
+    for t in batch:    
+        line = ' '.join(str(x) for x in t.tuple)
+        outF.write(line+"\n" )
 outF.close()
 
 print("----%s seconds ---" % (time.time()-start_time))
