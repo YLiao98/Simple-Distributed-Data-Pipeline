@@ -222,8 +222,11 @@ class Join(Operator):
         logger.debug("Join: at get_next()")
         if not self.hasJoinedTuple:
             # First, we load up all the tuples from the right input into the hash table
-            while(not self.right_input.input.end_of_file):
-                for r in self.right_input.get_next():
+            while True:
+                right_upstream = self.right_input.get_next()
+                if right_upstream == None:
+                    break
+                for r in right_upstream:
                     key = r.tuple[self.right_join_attribute]
                     if key in self.hashtable:
                         self.hashtable[r.tuple[self.right_join_attribute]].append(r.tuple)
@@ -231,8 +234,11 @@ class Join(Operator):
                         self.hashtable[key] = [r.tuple]
             logger.debug("right input done")
             # Then for each tuple in the left input, we match and yield the joined output tuple to batch
-            while(not self.left_input.input.end_of_file):
-                for l in self.left_input.get_next():
+            while True:
+                left_upstream = self.left_input.get_next()
+                if left_upstream == None:
+                    break
+                for l in left_upstream:
                     key = l.tuple[self.left_join_attribute]
                     if key in self.hashtable:
                         for r in self.hashtable[key]:
@@ -248,6 +254,7 @@ class Join(Operator):
         else:
             batch = self.joinedTuple[self.curr:self.curr + self.batch_size]
             self.curr += self.batch_size
+            self.joinedTuple = self.joinedTuple[self.curr:]
             return batch
 
     # Returns the lineage of the given tuples
@@ -336,6 +343,17 @@ class GroupBy(Operator):
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
+    """class variable:
+    res: total aggregated tuples
+    curr:current position at joinedtuples
+    batch_size: size of output from get_next()
+    end_of_batch: bool var to tell if we are at the end of batch
+    """
+    res = []
+    curr = 0
+    batch_size = 5000
+    end_of_batch = False
+
     # Initializes average operator
     def __init__(self, input, key, value, agg_fun, track_prov=False,
                                                    propagate_prov=False):
@@ -355,32 +373,48 @@ class GroupBy(Operator):
         if self.key == None:            
             # first we set up an appropriate init value for aggregate
             aggr = []
-            # then for each tuple, we update the tuple 
-            for atuple in self.input.get_next():
-                aggr.append(int(atuple.tuple[self.value]))
+            while True:
+                upstream = self.input.get_next()
+                if upstream == None: 
+                    logger.debug("exit loop")
+                    break
+                # then for each tuple, we update the tuple 
+                for atuple in upstream:
+                    self.res.append(int(atuple.tuple[self.value]))
             # let aggregate function handle the aggregated data and convert to a tuple
-            aggr_res = [self.agg_fun(aggr)]
+            aggr_res = [self.agg_fun(self.res)]
             res = tuple(aggr_res)
             output = ATuple(tuple = res, operator = self)
+            self.end_of_batch = True
             return [output]
         else:
             # for each key of the group by attribute, we should return a 2-tuple(key, aggr_val)
             # where aggregate value is the value of the aggregate for the qgourp of tuples corresponding to the key
             # use a dict to keep track of all groups
             aggr = dict()
-
-            for t in self.input.get_next():
-                g_attr = t.tuple[self.key]
-                # initialize it if not in the dictionary
-                if g_attr not in aggr:
-                    aggr[g_attr] = []
-                # for that attribute, update the corresponding aggregate value
-                aggr[g_attr].append(int(t.tuple[self.value]))
-            # pass it to aggregate function and return output tuple one by one
+            while True:
+                upstream = self.input.get_next()
+                if upstream == None: break
+                for t in upstream:
+                    g_attr = t.tuple[self.key]
+                    # initialize it if not in the dictionary
+                    if g_attr not in aggr:
+                        aggr[g_attr] = []
+                    # for that attribute, update the corresponding aggregate value
+                    aggr[g_attr].append(int(t.tuple[self.value]))
+            # pass it to aggregate function and yield output tuple one by one
             for g_attr in aggr:
                 output = tuple(g_attr, int(self.agg_fun(aggr[g_attr])))
-                batch.append(ATuple(tuple=output,operator=self))
-            return batch
+                self.res.append(ATuple(tuple=output,operator=self))
+            
+            if len(self.res) < self.batch_size:
+                self.end_of_batch = True
+                return self.joinedTuple
+            else:
+                batch = self.res[self.curr:self.curr + self.batch_size]
+                self.curr += self.batch_size
+                self.res = self.res[self.curr:]
+                return batch
 
 
     # Returns the lineage of the given tuples
