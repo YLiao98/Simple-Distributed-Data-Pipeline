@@ -2,7 +2,7 @@ from __future__ import absolute_import
 from __future__ import annotations
 from __future__ import division
 from __future__ import print_function
-
+# aside from assignment default import, import functools.cmp_to_key
 import csv
 import logging
 from typing import List, Tuple
@@ -345,11 +345,13 @@ class GroupBy(Operator):
     """
     """class variable:
     res: total aggregated tuples
+    hasAllTuples: if all the tuples are gathered from upstream
     curr:current position at joinedtuples
     batch_size: size of output from get_next()
     end_of_batch: bool var to tell if we are at the end of batch
     """
     res = []
+    hasAllTuples = false
     curr = 0
     batch_size = 5000
     end_of_batch = False
@@ -373,14 +375,18 @@ class GroupBy(Operator):
         if self.key == None:            
             # first we set up an appropriate init value for aggregate
             aggr = []
-            while True:
-                upstream = self.input.get_next()
-                if upstream == None: 
-                    logger.debug("exit loop")
-                    break
-                # then for each tuple, we update the tuple 
-                for atuple in upstream:
-                    self.res.append(int(atuple.tuple[self.value]))
+            if not self.hasAllTuples:
+                # pulling from upstream
+                while True:
+                    upstream = self.input.get_next()
+                    if upstream == None: 
+                        logger.debug("exit loop")
+                        break
+                    # then for each tuple, we update the tuple 
+                    for atuple in upstream:
+                        self.res.append(int(atuple.tuple[self.value]))
+            #all tuples upstream are gathered
+            self.hasAllTuples = True
             # let aggregate function handle the aggregated data and convert to a tuple
             aggr_res = [self.agg_fun(self.res)]
             res = tuple(aggr_res)
@@ -392,24 +398,27 @@ class GroupBy(Operator):
             # where aggregate value is the value of the aggregate for the qgourp of tuples corresponding to the key
             # use a dict to keep track of all groups
             aggr = dict()
-            while True:
-                upstream = self.input.get_next()
-                if upstream == None: break
-                for t in upstream:
-                    g_attr = t.tuple[self.key]
-                    # initialize it if not in the dictionary
-                    if g_attr not in aggr:
-                        aggr[g_attr] = []
-                    # for that attribute, update the corresponding aggregate value
-                    aggr[g_attr].append(int(t.tuple[self.value]))
-            # pass it to aggregate function and yield output tuple one by one
-            for g_attr in aggr:
-                output = tuple(g_attr, int(self.agg_fun(aggr[g_attr])))
-                self.res.append(ATuple(tuple=output,operator=self))
-            
+            if not self.hasAllTuples:
+                while True:
+                    upstream = self.input.get_next()
+                    #if done with upstream fetching, exit loop
+                    if upstream == None: break
+                    for t in upstream:
+                        g_attr = t.tuple[self.key]
+                        # initialize it if not in the dictionary
+                        if g_attr not in aggr:
+                            aggr[g_attr] = []
+                        # for that attribute, update the corresponding aggregate value
+                        aggr[g_attr].append(int(t.tuple[self.value]))
+                # pass it to aggregate function and yield output tuple one by one
+                for g_attr in aggr:
+                    output = tuple(g_attr, int(self.agg_fun(aggr[g_attr])))
+                    self.res.append(ATuple(tuple=output,operator=self))
+                self.hasAllTuples = True
+            # we return correct batch size
             if len(self.res) < self.batch_size:
                 self.end_of_batch = True
-                return self.joinedTuple
+                return self.res
             else:
                 batch = self.res[self.curr:self.curr + self.batch_size]
                 self.curr += self.batch_size
@@ -441,18 +450,61 @@ class Histogram(Operator):
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
+    """class variable:
+    res: total tuples from upstream
+    histo: hashmap for 
+    hasAllTuples: if all the tuples are gathered from upstream
+    curr:current position at joinedtuples
+    batch_size: size of output from get_next()
+    end_of_batch: bool var to tell if we are at the end of batch
+    """
+    res = []
+    histo = dict()
+    hasAllTuples = false
+    curr = 0
+    batch_size = 5000
+    end_of_batch = False
+
     # Initializes histogram operator
     def __init__(self, input, key=0, track_prov=False, propagate_prov=False):
         super(Histogram, self).__init__(name="Histogram",
                                         track_prov=track_prov,
                                         propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # initialize fields
+        self.input = input
+        self.key = key
 
     # Returns histogram (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        logger.debug("Histogram at get_next()")
+        if not self.hasAllTuples:
+            while True:
+                upstream = self.input.get_next()
+                #fetching done? then break out the loop
+                if upstream == None: break
+                for t in upstream:
+                    # key tuple to group by
+                    k = t.tuple[self.key]
+                    if not k in self.histo:
+                        self.histo[k] = [t]
+                    else:
+                        self.histo[k].append(t)
+            for key in self.histo:
+                output = tuple(key, len(self.histo[key]))
+                self.res.append(ATuple(tuple = output, operator = self))
+            # prevent pulling again next time we call get_next()
+            self.hasAllTuples=True
+        
+        # we return correct batch size
+        if len(self.res) < self.batch_size:
+            self.end_of_batch = True
+            return self.res
+        else:
+            batch = self.res[self.curr:self.curr + self.batch_size]
+            self.curr += self.batch_size
+            self.res = self.res[self.curr:]
+            return batch
+
 
 # Order by operator
 class OrderBy(Operator):
@@ -468,19 +520,59 @@ class OrderBy(Operator):
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
+    """class variable:
+    res: total sorted tuples
+    hasAllTuples: if upstream tuples are gathered
+    curr:current position at joinedtuples
+    batch_size: size of output from get_next()
+    end_of_batch: bool var to tell if we are at the end of batch
+    """
+    res = []
+    hasAllTuples = False
+    curr = 0
+    batch_size = 5000
+    end_of_batch = False
     # Initializes order-by operator
     def __init__(self, input, comparator, ASC=True, track_prov=False,
                                                     propagate_prov=False):
         super(OrderBy, self).__init__(name="OrderBy",
                                       track_prov=track_prov,
                                       propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # Initialize the field
+        self.input = input
+        self.comparator = comparator
+        self.ASC = ASC
+
 
     # Returns the sorted input (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        logger.debug("OrderBy at get_next()")
+        # declare a batch
+        batch = []
+        #if we are done with all input
+        if self.end_of_batch: return None
+        # fetch all the batches upstream
+        if not self.hasAllTuples:
+            while True:
+                upstream = self.input.get_next()
+                #fetching done? then break out the loop
+                if upstream == None: break
+                self.res += upstream
+        # upstream pulling done
+        self.hasAllTuples=True
+        # sort the whole result before we output batch
+        self.res.sort(key = self.comparator, reverse = not self.ASC)
+        # we return correct batch size
+        if len(self.res) < self.batch_size:
+            self.end_of_batch = True
+            return self.res
+        else:
+            batch = self.res[self.curr:self.curr + self.batch_size]
+            self.curr += self.batch_size
+            self.res = self.res[self.curr:]
+            return batch
+
+
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
@@ -505,17 +597,51 @@ class TopK(Operator):
         propagate_prov (bool): Defines whether to propagate provenance
         annotations (True) or not (False).
     """
+    """class variable:
+    res: total tuples from upstream
+    hasAllTuples: total tuples from upstream
+    curr:current position at joinedtuples
+    batch_size: size of output from get_next()
+    end_of_batch: bool var to tell if we are at the end of batch
+    """
+    res = []
+    hasAllTuples = False
+    curr = 0
+    batch_size = 5000
+    end_of_batch = False
     # Initializes top-k operator
     def __init__(self, input, k=None, track_prov=False, propagate_prov=False):
         super(TopK, self).__init__(name="TopK", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
-        # YOUR CODE HERE
-        pass
+        # initialize the field
+        self.input = input
+        self.limit = k
 
     # Returns the first k tuples in the input (or None if done)
     def get_next(self):
-        # YOUR CODE HERE
-        pass
+        logger.debug("TopK at get_next()")
+        # declare a batch
+        batch = []
+        #if we are done with all input
+        if self.end_of_batch: return None
+        # fetch all the batches upstream
+        if not self.hasAllTuples:
+            while True:
+                upstream = self.input.get_next()
+                #fetching done? then break out the loop
+                if upstream == None: break
+                self.res += upstream
+        # prevent pulling again next time we call get_next()
+        self.hasAllTuples = True
+        self.res = self.res[:limit]
+        if len(self.res) <= batch_size:
+            return self.res
+        else:
+            batch = self.res[self.curr:self.curr + self.batch_size]
+            self.curr += self.batch_size
+            self.res = self.res[self.curr:]
+            return batch
+
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
