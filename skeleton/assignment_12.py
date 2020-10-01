@@ -739,7 +739,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--friends", metavar="[path_to_friends_txt]", type=str, required=True, help="Path to friends.txt", dest="friendFile")
     parser.add_argument("-r", "--ratings", metavar="[path_to_ratings_txt]", type=str, required=True, help="Path to movie_ratings.txt", dest="ratingFile")
     parser.add_argument("-u", "--uid", metavar="[user_id]", type=int, required=True, help="User id for task 1, 2 and 3", dest="uid")
-    parser.add_argument("-m", "--mid", metavar="[movie_id]", type=int, required=True, help="Movie id for task 1 and 3, movie id is not used in task 2", dest="mid")
+    parser.add_argument("-m", "--mid", metavar="[movie_id]", nargs='?',required=False, type=int, help="Movie id for task 1 and 3, movie id is not used in task 2", dest="mid")
     
     args = parser.parse_args()
 
@@ -792,7 +792,19 @@ if __name__ == "__main__":
     #        ORDER BY score DESC
     #        LIMIT 1 )
 
-    # YOUR CODE HERE
+    def task2():
+        friends = Scan(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan(filepath=args.ratingFile)
+        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        groupByMid = GroupBy(input=joinTuple,key=3, value= 4,agg_fun=aggrFunction)
+        orderByScore = OrderBy(input=groupByMid,comparator = lambda x: x.tuple[1],ASC=False)
+        limit = TopK(input=orderByScore,k = 1)
+        select = Project(input=limit,fields_to_keep=[0])
+        while True:
+            batch = select.get_next()
+            if batch == None: break
+            expected_val = batch[0].tuple[0]
+        logger.info("Recommended movie for you is "+ expected_val)
 
 
     # TASK 3: Implement explanation query for User A and Movie M

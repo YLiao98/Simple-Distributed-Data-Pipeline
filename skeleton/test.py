@@ -229,6 +229,26 @@ def testTask1():
         batch = testGroupby.get_next()
         if batch == None: break
         aggregated_val=batch[0].tuple[0]
-    assert aggregated_val == "3.2", "Groupby operation failed, incorrect value on aggregated result"
+    assert aggregated_val == "3.2", "task 1 operation failed, incorrect value on aggregated result"
+
+    
+#test task 2 function, and compare with the expected result
+def testTask2():
+    def predicate(input):
+        return input[0] == "7"
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan(filepath="../data/test2.txt")
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=testAgg)
+    testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False)
+    testTopK = TopK(input=testOrderby,k = 1)
+    testProject = Project(input=testTopK,fields_to_keep=[0])
+    while True:
+        batch = testProject.get_next()
+        if batch == None: break
+        output=batch[0].tuple[0]
+    assert output == "1", "task 2 operation failed, incorrect value."
 
     
