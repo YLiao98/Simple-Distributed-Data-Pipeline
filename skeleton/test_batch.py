@@ -64,7 +64,7 @@ testScan2= Scan(filepath="../data/movie_ratings.txt")
 
 testSelect2 = Select(input = testScan2, predicate = test_predicate_2)
 testJoin = Join(left_input=testSelect,right_input=testSelect2,left_join_attribute=1,right_join_attribute=0)
-outF = open("testJoin.txt","w")
+outF = open("testJoin1.txt","w")
 while(not testJoin.end_of_batch):
     batch = testJoin.get_next()
     if batch != None:
@@ -97,13 +97,13 @@ testScan2= Scan(filepath="../data/movie_ratings.txt")
 testSelect2 = Select(input = testScan2, predicate = test_predicate_2)
 testJoin = Join(left_input=testSelect,right_input=testSelect2,left_join_attribute=1,right_join_attribute=0)
 testGroupby = GroupBy(input= testJoin, key=None,value = 4,agg_fun=testAGGR)
-outF = open("testgroupby.txt","w")
-while(not testGroupby.input.end_of_batch):
+outF = open("test_test.txt","w")
+while True:
     batch = testGroupby.get_next()
-    if batch != None:
-        for t in batch:    
-            line = ' '.join(str(x) for x in t.tuple)
-            outF.write(line+"\n" )
+    if batch == None: break
+    for t in batch:    
+        line = ' '.join(str(x) for x in t.tuple)
+        outF.write(line+"\n" )
 outF.close()
 
 print("----%s seconds ---" % (time.time()-start_time))
@@ -122,6 +122,56 @@ outF = open("testgroupby.txt","w")
 
 batch = testGroupby.get_next()
 if batch != None:
+    for t in batch:    
+        line = ' '.join(str(x) for x in t.tuple)
+        outF.write(line+"\n" )
+outF.close()
+
+print("----%s seconds ---" % (time.time()-start_time))
+
+start_time = time.time()
+
+def filter1(input):
+    return input[0] == "1"
+
+
+
+def testAGGR(input):
+    return round(sum(input)/len(input),1)
+
+testScan1 = Scan(filepath="../data/test1.txt",filter=filter1)
+testScan2 = Scan(filepath="../data/test2.txt")
+testJoin = Join(left_input=testScan1, right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+testGroupby = GroupBy(input= testJoin, key=3,value = 4,agg_fun=testAGGR)
+
+outF = open("test_task2.txt","w")
+while True:
+    batch = testGroupby.get_next()
+    if batch == None: break
+    for t in batch:    
+        line = ' '.join(str(x) for x in t.tuple)
+        outF.write(line+"\n" )
+outF.close()
+
+print("----%s seconds ---" % (time.time()-start_time))
+
+
+start_time = time.time()
+
+
+
+
+def testAGGR(input):
+    return round(sum(input)/len(input),1)
+
+
+testScan2 = Scan(filepath="../data/test2.txt")
+testGroupby = GroupBy(input= testScan2, key=1,value = 2,agg_fun=testAGGR)
+
+outF = open("test_gb.txt","w")
+while True:
+    batch = testGroupby.get_next()
+    if batch == None: break
     for t in batch:    
         line = ' '.join(str(x) for x in t.tuple)
         outF.write(line+"\n" )
