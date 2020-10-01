@@ -815,7 +815,17 @@ if __name__ == "__main__":
     #       AND F.UID1 = 'A'
     #       AND R.MID = 'M'
 
-    # YOUR CODE HERE
+    def task3():
+        friends = Scan(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan(filepath=args.ratingFile,filter = predicate2)
+        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        histo = Histogram(input=joinTuple,key = 4)
+        while True:
+            batch = histo.get_next()
+            if batch == None: break
+            for t in batch:
+                logger.info("Movie {} rated {} given by {} friends".format(args.mid,t.tuple[0], t.tuple[1]))
+        
 
 
     # TASK 4: Turn your data operators into Ray actors

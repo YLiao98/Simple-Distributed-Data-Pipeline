@@ -251,4 +251,23 @@ def testTask2():
         output=batch[0].tuple[0]
     assert output == "1", "task 2 operation failed, incorrect value."
 
-    
+#test task 2 function, and compare with the expected result
+def testTask3():
+    def predicate(input):
+        return input[0] == "6"
+    def predicate1(input):
+        return input[1] == "2"
+    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan(filepath="../data/test2.txt",filter=predicate1)
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testHisto = Histogram(input=testJoin,key=4)
+    testOrderby = OrderBy(input=testHisto,comparator= lambda x: x.tuple[0],ASC=True)
+    outF = open("testTask3.txt","w")
+    while True:
+        batch = testOrderby.get_next()
+        if batch == None: break
+        for t in batch:    
+            line = ' '.join(str(x) for x in t.tuple)
+            outF.write(line+"\n" )
+    outF.close()
+    assert filecmp.cmp("testTask3.txt", "../data/pytestTask3.txt",shallow=False), "Orderby operation failed, incorrect content"
