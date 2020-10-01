@@ -2,12 +2,13 @@ from __future__ import absolute_import
 from __future__ import annotations
 from __future__ import division
 from __future__ import print_function
-# aside from assignment default import, import functools.cmp_to_key
+# aside from assignment default import, import argparse to build CLI
 import csv
 import logging
 from typing import List, Tuple
 import uuid
-
+import argparse
+from argparse import RawTextHelpFormatter 
 import ray
 
 # Note (john): Make sure you use Python's logger to log
@@ -523,6 +524,7 @@ class Histogram(Operator):
             self.end_of_batch = True
             return self.res
         else:
+            #slice the result to limit to batch
             batch = self.res[self.curr:self.curr + self.batch_size]
             self.curr += self.batch_size
             self.res = self.res[self.curr:]
@@ -729,7 +731,25 @@ class Select(Operator):
 
 if __name__ == "__main__":
 
+
     logger.info("Assignment #1")
+    #build CLI
+    parser = argparse.ArgumentParser(description="CS591L1 Assignment #1.\nTask #1: 'likeness' of a movie for user A and Movie M\nTask #2: recommend a movie for user A\nTask #3: explanation query that amounts to histogram of the ratings for movie M as given by user A's friends\n", formatter_class=RawTextHelpFormatter)
+    parser.add_argument("-t", "--task", metavar="[task_number]", type=int, required=True, help="Task # to run", dest="task_num")
+    parser.add_argument("-f", "--friends", metavar="[path_to_friends_txt]", type=str, required=True, help="Path to friends.txt", dest="friendFile")
+    parser.add_argument("-r", "--ratings", metavar="[path_to_ratings_txt]", type=str, required=True, help="Path to movie_ratings.txt", dest="ratingFile")
+    parser.add_argument("-u", "--uid", metavar="[user_id]", type=int, required=True, help="User id for task 1, 2 and 3", dest="uid")
+    parser.add_argument("-m", "--mid", metavar="[movie_id]", type=int, required=True, help="Movie id for task 1 and 3, movie id is not used in task 2", dest="mid")
+    
+    args = parser.parse_args()
+
+    logger.info("Starting task #{}.....".format(args.task_num))
+    userInfo ="user id={} ,".format(args.uid)
+    movieInfo= ("movie id={}, ".format(args.mid), "")[args.task_num == 2]
+    filepathInfo = "filepath to friends={}, filepath to ratings={}".format(args.friendFile, args.ratingFile)
+    logger.info(userInfo + movieInfo + filepathInfo)
+    
+
 
     # TASK 1: Implement 'likeness' prediction query for User A and Movie M
     #
@@ -739,7 +759,26 @@ if __name__ == "__main__":
     #       AND F.UID1 = 'A'
     #       AND R.MID = 'M'
 
-    # YOUR CODE HERE
+    #user-define predicate function1
+    def predicate1(input):
+        return input[0]== str(args.uid)
+    def predicate2(input):
+        return input[1]== str(args.mid)
+    def aggrFunction(input):
+        return round(sum(input)/len(input),2)
+
+    def task1():
+        # push the filter down to leaf
+        scanF = Scan(filepath=args.friendFile,filter=predicate1)
+        scanR = Scan(filepath=args.ratingFile,filter=predicate2)
+        testJoin = Join(left_input=scanF,right_input=scanR,left_join_attribute=1,right_join_attribute=0)
+        testGroupby = GroupBy(input=testJoin,key=None,value=4,agg_fun=aggrFunction)
+        while True:
+            batch = testGroupby.get_next()
+            if batch == None: break
+            aggr_val = batch[0].tuple[0]
+        logger.info("Average rating is "+ aggr_val)
+
 
 
     # TASK 2: Implement recommendation query for User A
@@ -771,6 +810,8 @@ if __name__ == "__main__":
     #
     # NOTE (john): Add your changes for Task 4 to a new git branch 'ray'
 
+
+    eval("task" + str(args.task_num))()
 
     logger.info("Assignment #2")
 

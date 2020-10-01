@@ -1,4 +1,4 @@
-from assignment_12_block import *
+from assignment_12 import *
 import pytest
 import filecmp
 import pdb
@@ -212,3 +212,23 @@ def testTopK():
             outF.write(line+"\n" )
     outF.close()
     assert filecmp.cmp("testHisto.txt", "../data/pytestHisto.txt",shallow=False), "Histo operation failed, incorrect content"
+
+#test task 1 function, and compare with the expected result
+def testTask1():
+    def predicate(input):
+        return input[0] == "3"
+    def predicate1(input):
+        return input[1] == "2"
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan(filepath="../data/test2.txt",filter = predicate1)
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testGroupby = GroupBy(input = testJoin,key=None,value=4,agg_fun=testAgg)
+    while True:
+        batch = testGroupby.get_next()
+        if batch == None: break
+        aggregated_val=batch[0].tuple[0]
+    assert aggregated_val == "3.2", "Groupby operation failed, incorrect value on aggregated result"
+
+    
