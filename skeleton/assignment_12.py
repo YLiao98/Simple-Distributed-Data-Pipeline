@@ -779,12 +779,12 @@ if __name__ == "__main__":
 
     def task1():
         # push the filter down to leaf
-        scanF = Scan(filepath=args.friendFile,filter=predicate1)
-        scanR = Scan(filepath=args.ratingFile,filter=predicate2)
-        testJoin = Join(left_input=scanF,right_input=scanR,left_join_attribute=1,right_join_attribute=0)
-        testGroupby = GroupBy(input=testJoin,key=None,value=4,agg_fun=aggrFunction)
+        scanF = Scan.remote(filepath=args.friendFile,filter=predicate1)
+        scanR = Scan.remote(filepath=args.ratingFile,filter=predicate2)
+        testJoin = Join.remote(left_input=scanF,right_input=scanR,left_join_attribute=1,right_join_attribute=0)
+        testGroupby = GroupBy.remote(input=testJoin,key=None,value=4,agg_fun=aggrFunction)
         while True:
-            batch = testGroupby.get_next()
+            batch = ray.get(testGroupby.get_next.remote())
             if batch == None: break
             aggr_val = batch[0].tuple[0]
         logger.info("Average rating is "+ aggr_val)
@@ -803,15 +803,15 @@ if __name__ == "__main__":
     #        LIMIT 1 )
 
     def task2():
-        friends = Scan(filepath=args.friendFile,filter = predicate1)
-        ratings = Scan(filepath=args.ratingFile)
-        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
-        groupByMid = GroupBy(input=joinTuple,key=3, value= 4,agg_fun=aggrFunction)
-        orderByScore = OrderBy(input=groupByMid,comparator = lambda x: x.tuple[1],ASC=False)
-        limit = TopK(input=orderByScore,k = 1)
-        select = Project(input=limit,fields_to_keep=[0])
+        friends = Scan.remote(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan.remote(filepath=args.ratingFile)
+        joinTuple = Join.remote(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        groupByMid = GroupBy.remote(input=joinTuple,key=3, value= 4,agg_fun=aggrFunction)
+        orderByScore = OrderBy.remote(input=groupByMid,comparator = lambda x: x.tuple[1],ASC=False)
+        limit = TopK.remote(input=orderByScore,k = 1)
+        select = Project.remote(input=limit,fields_to_keep=[0])
         while True:
-            batch = select.get_next()
+            batch = ray.get(select.get_next.remote())
             if batch == None: break
             expected_val = batch[0].tuple[0]
         logger.info("Recommended movie for you is "+ expected_val)
@@ -826,12 +826,12 @@ if __name__ == "__main__":
     #       AND R.MID = 'M'
 
     def task3():
-        friends = Scan(filepath=args.friendFile,filter = predicate1)
-        ratings = Scan(filepath=args.ratingFile,filter = predicate2)
-        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
-        histo = Histogram(input=joinTuple,key = 4)
+        friends = Scan.remote(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan.remote(filepath=args.ratingFile,filter = predicate2)
+        joinTuple = Join.remote(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        histo = Histogram.remote(input=joinTuple,key = 4)
         while True:
-            batch = histo.get_next()
+            batch = ray.get(histo.get_next.remote())
             if batch == None: break
             for t in batch:
                 logger.info("Movie {} rated {} given by {} friends".format(args.mid,t.tuple[0], t.tuple[1]))
