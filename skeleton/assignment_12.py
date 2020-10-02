@@ -11,8 +11,6 @@ import argparse
 from argparse import RawTextHelpFormatter 
 import ray
 
-ray.init()
-
 # Note (john): Make sure you use Python's logger to log
 #              information about your program
 logger = logging.getLogger(__name__)
@@ -91,7 +89,6 @@ class Operator:
         logger.error("Where-provenance method not implemented!")
 
 # Scan operator
-@ray.remote
 class Scan(Operator):
     """Scan operator.
 
@@ -107,7 +104,7 @@ class Scan(Operator):
     # Initializes scan operator
     def __init__(self, filepath, filter=None, track_prov=False,
                                               propagate_prov=False):
-        super().__init__(name="Scan", track_prov=track_prov,
+        super(Scan, self).__init__(name="Scan", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         # Initialize the fields
         self.filepath = filepath
@@ -180,7 +177,6 @@ class Scan(Operator):
         pass
 
 # Equi-join operator
-@ray.remote
 class Join(Operator):
     """Equi-join operator.
 
@@ -201,7 +197,7 @@ class Join(Operator):
                                                 right_join_attribute,
                                                 track_prov=False,
                                                 propagate_prov=False):
-        super().__init__(name="Join", track_prov=track_prov,
+        super(Join, self).__init__(name="Join", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         """properties:
         hashtable: hashtable for storing 
@@ -233,7 +229,7 @@ class Join(Operator):
         if not self.hasJoinedTuple:
             # First, we load up all the tuples from the right input into the hash table
             while True:
-                right_upstream = ray.get(self.right_input.get_next.remote())
+                right_upstream = self.right_input.get_next()
                 if right_upstream == None:
                     break
                 for r in right_upstream:
@@ -245,7 +241,7 @@ class Join(Operator):
             logger.debug("right input done")
             # Then for each tuple in the left input, we match and yield the joined output tuple to batch
             while True:
-                left_upstream = ray.get(self.left_input.get_next.remote())
+                left_upstream = self.left_input.get_next()
                 if left_upstream == None:
                     break
                 for l in left_upstream:
@@ -280,7 +276,6 @@ class Join(Operator):
         pass
 
 # Project operator
-@ray.remote
 class Project(Operator):
     """Project operator.
 
@@ -298,7 +293,7 @@ class Project(Operator):
     # Initializes project operator
     def __init__(self, input, fields_to_keep=[], track_prov=False,
                                                  propagate_prov=False):
-        super().__init__(name="Project", track_prov=track_prov,
+        super(Project, self).__init__(name="Project", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         # Initialize the fields
         self.input = input
@@ -309,7 +304,7 @@ class Project(Operator):
         logger.debug("Project: at get_next()")
         lst = []
         # if upstream pass None, return None
-        next_batch = ray.get(self.input.get_next.remote())
+        next_batch = self.input.get_next()
         if next_batch == None: 
             logger.debug("Project done.")
             return None
@@ -344,7 +339,6 @@ class Project(Operator):
         pass
 
 # Group-by operator
-@ray.remote
 class GroupBy(Operator):
     """Group-by operator.
 
@@ -363,7 +357,7 @@ class GroupBy(Operator):
     # Initializes average operator
     def __init__(self, input, key, value, agg_fun, track_prov=False,
                                                    propagate_prov=False):
-        super().__init__(name="GroupBy", track_prov=track_prov,
+        super(GroupBy, self).__init__(name="GroupBy", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         """properties:
         res: total aggregated tuples
@@ -398,7 +392,7 @@ class GroupBy(Operator):
             if not self.hasAllTuples:
                 # pulling from upstream
                 while True:
-                    upstream = ray.get(self.input.get_next.remote())
+                    upstream = self.input.get_next()
                     if upstream == None: 
                         logger.debug("exit loop")
                         break
@@ -425,7 +419,7 @@ class GroupBy(Operator):
             # gather all tuples upstream
             if not self.hasAllTuples:
                 while True:
-                    upstream = ray.get(self.input.get_next.remote())
+                    upstream = self.input.get_next()
                     #if done with upstream fetching, exit loop
                     if upstream == None: break
                     for t in upstream:
@@ -465,7 +459,6 @@ class GroupBy(Operator):
         pass
 
 # Custom histogram operator
-@ray.remote
 class Histogram(Operator):
     """Histogram operator.
 
@@ -482,7 +475,7 @@ class Histogram(Operator):
 
     # Initializes histogram operator
     def __init__(self, input, key=0, track_prov=False, propagate_prov=False):
-        super().__init__(name="Histogram",
+        super(Histogram, self).__init__(name="Histogram",
                                         track_prov=track_prov,
                                         propagate_prov=propagate_prov)
         # initialize fields
@@ -510,7 +503,7 @@ class Histogram(Operator):
         if self.end_of_batch: return None
         if not self.hasAllTuples:
             while True:
-                upstream = ray.get(self.input.get_next.remote())
+                upstream = self.input.get_next()
                 #fetching done? then break out the loop
                 if upstream == None: break
                 for t in upstream:
@@ -539,7 +532,6 @@ class Histogram(Operator):
 
 
 # Order by operator
-@ray.remote
 class OrderBy(Operator):
     """OrderBy operator.
 
@@ -557,7 +549,7 @@ class OrderBy(Operator):
     # Initializes order-by operator
     def __init__(self, input, comparator, ASC=True, track_prov=False,
                                                     propagate_prov=False):
-        super().__init__(name="OrderBy",
+        super(OrderBy, self).__init__(name="OrderBy",
                                       track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         # Initialize the field
@@ -590,7 +582,7 @@ class OrderBy(Operator):
         # fetch all the batches upstream
         if not self.hasAllTuples:
             while True:
-                upstream = ray.get(self.input.get_next.remote())
+                upstream = self.input.get_next()
                 #fetching done? then break out the loop
                 if upstream == None: break
                 self.res += upstream
@@ -623,7 +615,6 @@ class OrderBy(Operator):
         pass
 
 # Top-k operator
-@ray.remote
 class TopK(Operator):
     """TopK operator.
 
@@ -638,7 +629,7 @@ class TopK(Operator):
     
     # Initializes top-k operator
     def __init__(self, input, k=None, track_prov=False, propagate_prov=False):
-        super().__init__(name="TopK", track_prov=track_prov,
+        super(TopK, self).__init__(name="TopK", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         # initialize the field
         self.input = input
@@ -665,7 +656,7 @@ class TopK(Operator):
         # fetch all the batches upstream
         if not self.hasAllTuples:
             while True:
-                upstream = ray.get(self.input.get_next.remote())
+                upstream = self.input.get_next()
                 #fetching done? then break out the loop
                 if upstream == None: break
                 self.res += upstream
@@ -694,7 +685,6 @@ class TopK(Operator):
         pass
 
 # Filter operator
-@ray.remote
 class Select(Operator):
     """Select operator.
 
@@ -709,7 +699,7 @@ class Select(Operator):
     # Initializes select operator
     def __init__(self, input, predicate, track_prov=False,
                                          propagate_prov=False):
-        super().__init__(name="Select", track_prov=track_prov,
+        super(Select, self).__init__(name="Select", track_prov=track_prov,
                                      propagate_prov=propagate_prov)
         # Initialize the field
         self.input = input
@@ -724,7 +714,7 @@ class Select(Operator):
                 raise ValueError("no predicate function")
             # fetch the batch from scanned input, process each tuple to a new batch
             batch = []
-            block= ray.get(self.input.get_next.remote())
+            block= self.input.get_next()
             # if nothing from input, return None
             if block == None:
                 return None
@@ -779,12 +769,12 @@ if __name__ == "__main__":
 
     def task1():
         # push the filter down to leaf
-        scanF = Scan.remote(filepath=args.friendFile,filter=predicate1)
-        scanR = Scan.remote(filepath=args.ratingFile,filter=predicate2)
-        testJoin = Join.remote(left_input=scanF,right_input=scanR,left_join_attribute=1,right_join_attribute=0)
-        testGroupby = GroupBy.remote(input=testJoin,key=None,value=4,agg_fun=aggrFunction)
+        scanF = Scan(filepath=args.friendFile,filter=predicate1)
+        scanR = Scan(filepath=args.ratingFile,filter=predicate2)
+        testJoin = Join(left_input=scanF,right_input=scanR,left_join_attribute=1,right_join_attribute=0)
+        testGroupby = GroupBy(input=testJoin,key=None,value=4,agg_fun=aggrFunction)
         while True:
-            batch = ray.get(testGroupby.get_next.remote())
+            batch = testGroupby.get_next()
             if batch == None: break
             aggr_val = batch[0].tuple[0]
         logger.info("Average rating is "+ aggr_val)
@@ -803,15 +793,15 @@ if __name__ == "__main__":
     #        LIMIT 1 )
 
     def task2():
-        friends = Scan.remote(filepath=args.friendFile,filter = predicate1)
-        ratings = Scan.remote(filepath=args.ratingFile)
-        joinTuple = Join.remote(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
-        groupByMid = GroupBy.remote(input=joinTuple,key=3, value= 4,agg_fun=aggrFunction)
-        orderByScore = OrderBy.remote(input=groupByMid,comparator = lambda x: x.tuple[1],ASC=False)
-        limit = TopK.remote(input=orderByScore,k = 1)
-        select = Project.remote(input=limit,fields_to_keep=[0])
+        friends = Scan(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan(filepath=args.ratingFile)
+        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        groupByMid = GroupBy(input=joinTuple,key=3, value= 4,agg_fun=aggrFunction)
+        orderByScore = OrderBy(input=groupByMid,comparator = lambda x: x.tuple[1],ASC=False)
+        limit = TopK(input=orderByScore,k = 1)
+        select = Project(input=limit,fields_to_keep=[0])
         while True:
-            batch = ray.get(select.get_next.remote())
+            batch = select.get_next()
             if batch == None: break
             expected_val = batch[0].tuple[0]
         logger.info("Recommended movie for you is "+ expected_val)
@@ -826,12 +816,12 @@ if __name__ == "__main__":
     #       AND R.MID = 'M'
 
     def task3():
-        friends = Scan.remote(filepath=args.friendFile,filter = predicate1)
-        ratings = Scan.remote(filepath=args.ratingFile,filter = predicate2)
-        joinTuple = Join.remote(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
-        histo = Histogram.remote(input=joinTuple,key = 4)
+        friends = Scan(filepath=args.friendFile,filter = predicate1)
+        ratings = Scan(filepath=args.ratingFile,filter = predicate2)
+        joinTuple = Join(left_input=friends,right_input=ratings,left_join_attribute=1, right_join_attribute=0)
+        histo = Histogram(input=joinTuple,key = 4)
         while True:
-            batch = ray.get(histo.get_next.remote())
+            batch = histo.get_next()
             if batch == None: break
             for t in batch:
                 logger.info("Movie {} rated {} given by {} friends".format(args.mid,t.tuple[0], t.tuple[1]))
