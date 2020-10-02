@@ -11,6 +11,8 @@ import argparse
 from argparse import RawTextHelpFormatter 
 import ray
 
+ray.init()
+
 # Note (john): Make sure you use Python's logger to log
 #              information about your program
 logger = logging.getLogger(__name__)
@@ -89,6 +91,7 @@ class Operator:
         logger.error("Where-provenance method not implemented!")
 
 # Scan operator
+@ray.remote
 class Scan(Operator):
     """Scan operator.
 
@@ -104,7 +107,7 @@ class Scan(Operator):
     # Initializes scan operator
     def __init__(self, filepath, filter=None, track_prov=False,
                                               propagate_prov=False):
-        super(Scan, self).__init__(name="Scan", track_prov=track_prov,
+        super().__init__(name="Scan", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         # Initialize the fields
         self.filepath = filepath
@@ -177,6 +180,7 @@ class Scan(Operator):
         pass
 
 # Equi-join operator
+@ray.remote
 class Join(Operator):
     """Equi-join operator.
 
@@ -197,7 +201,7 @@ class Join(Operator):
                                                 right_join_attribute,
                                                 track_prov=False,
                                                 propagate_prov=False):
-        super(Join, self).__init__(name="Join", track_prov=track_prov,
+        super().__init__(name="Join", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         """properties:
         hashtable: hashtable for storing 
@@ -229,7 +233,7 @@ class Join(Operator):
         if not self.hasJoinedTuple:
             # First, we load up all the tuples from the right input into the hash table
             while True:
-                right_upstream = self.right_input.get_next()
+                right_upstream = ray.get(self.right_input.get_next.remote())
                 if right_upstream == None:
                     break
                 for r in right_upstream:
@@ -241,7 +245,7 @@ class Join(Operator):
             logger.debug("right input done")
             # Then for each tuple in the left input, we match and yield the joined output tuple to batch
             while True:
-                left_upstream = self.left_input.get_next()
+                left_upstream = ray.get(self.left_input.get_next.remote())
                 if left_upstream == None:
                     break
                 for l in left_upstream:
@@ -276,6 +280,7 @@ class Join(Operator):
         pass
 
 # Project operator
+@ray.remote
 class Project(Operator):
     """Project operator.
 
@@ -293,7 +298,7 @@ class Project(Operator):
     # Initializes project operator
     def __init__(self, input, fields_to_keep=[], track_prov=False,
                                                  propagate_prov=False):
-        super(Project, self).__init__(name="Project", track_prov=track_prov,
+        super().__init__(name="Project", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         # Initialize the fields
         self.input = input
@@ -304,7 +309,7 @@ class Project(Operator):
         logger.debug("Project: at get_next()")
         lst = []
         # if upstream pass None, return None
-        next_batch = self.input.get_next()
+        next_batch = ray.get(self.input.get_next.remote())
         if next_batch == None: 
             logger.debug("Project done.")
             return None
@@ -339,6 +344,7 @@ class Project(Operator):
         pass
 
 # Group-by operator
+@ray.remote
 class GroupBy(Operator):
     """Group-by operator.
 
@@ -357,7 +363,7 @@ class GroupBy(Operator):
     # Initializes average operator
     def __init__(self, input, key, value, agg_fun, track_prov=False,
                                                    propagate_prov=False):
-        super(GroupBy, self).__init__(name="GroupBy", track_prov=track_prov,
+        super().__init__(name="GroupBy", track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         """properties:
         res: total aggregated tuples
@@ -392,7 +398,7 @@ class GroupBy(Operator):
             if not self.hasAllTuples:
                 # pulling from upstream
                 while True:
-                    upstream = self.input.get_next()
+                    upstream = ray.get(self.input.get_next.remote())
                     if upstream == None: 
                         logger.debug("exit loop")
                         break
@@ -419,7 +425,7 @@ class GroupBy(Operator):
             # gather all tuples upstream
             if not self.hasAllTuples:
                 while True:
-                    upstream = self.input.get_next()
+                    upstream = ray.get(self.input.get_next.remote())
                     #if done with upstream fetching, exit loop
                     if upstream == None: break
                     for t in upstream:
@@ -459,6 +465,7 @@ class GroupBy(Operator):
         pass
 
 # Custom histogram operator
+@ray.remote
 class Histogram(Operator):
     """Histogram operator.
 
@@ -475,7 +482,7 @@ class Histogram(Operator):
 
     # Initializes histogram operator
     def __init__(self, input, key=0, track_prov=False, propagate_prov=False):
-        super(Histogram, self).__init__(name="Histogram",
+        super().__init__(name="Histogram",
                                         track_prov=track_prov,
                                         propagate_prov=propagate_prov)
         # initialize fields
@@ -503,7 +510,7 @@ class Histogram(Operator):
         if self.end_of_batch: return None
         if not self.hasAllTuples:
             while True:
-                upstream = self.input.get_next()
+                upstream = ray.get(self.input.get_next.remote())
                 #fetching done? then break out the loop
                 if upstream == None: break
                 for t in upstream:
@@ -532,6 +539,7 @@ class Histogram(Operator):
 
 
 # Order by operator
+@ray.remote
 class OrderBy(Operator):
     """OrderBy operator.
 
@@ -549,7 +557,7 @@ class OrderBy(Operator):
     # Initializes order-by operator
     def __init__(self, input, comparator, ASC=True, track_prov=False,
                                                     propagate_prov=False):
-        super(OrderBy, self).__init__(name="OrderBy",
+        super().__init__(name="OrderBy",
                                       track_prov=track_prov,
                                       propagate_prov=propagate_prov)
         # Initialize the field
@@ -582,7 +590,7 @@ class OrderBy(Operator):
         # fetch all the batches upstream
         if not self.hasAllTuples:
             while True:
-                upstream = self.input.get_next()
+                upstream = ray.get(self.input.get_next.remote())
                 #fetching done? then break out the loop
                 if upstream == None: break
                 self.res += upstream
@@ -615,6 +623,7 @@ class OrderBy(Operator):
         pass
 
 # Top-k operator
+@ray.remote
 class TopK(Operator):
     """TopK operator.
 
@@ -629,7 +638,7 @@ class TopK(Operator):
     
     # Initializes top-k operator
     def __init__(self, input, k=None, track_prov=False, propagate_prov=False):
-        super(TopK, self).__init__(name="TopK", track_prov=track_prov,
+        super().__init__(name="TopK", track_prov=track_prov,
                                    propagate_prov=propagate_prov)
         # initialize the field
         self.input = input
@@ -656,7 +665,7 @@ class TopK(Operator):
         # fetch all the batches upstream
         if not self.hasAllTuples:
             while True:
-                upstream = self.input.get_next()
+                upstream = ray.get(self.input.get_next.remote())
                 #fetching done? then break out the loop
                 if upstream == None: break
                 self.res += upstream
@@ -685,6 +694,7 @@ class TopK(Operator):
         pass
 
 # Filter operator
+@ray.remote
 class Select(Operator):
     """Select operator.
 
@@ -699,7 +709,7 @@ class Select(Operator):
     # Initializes select operator
     def __init__(self, input, predicate, track_prov=False,
                                          propagate_prov=False):
-        super(Select, self).__init__(name="Select", track_prov=track_prov,
+        super().__init__(name="Select", track_prov=track_prov,
                                      propagate_prov=propagate_prov)
         # Initialize the field
         self.input = input
@@ -714,7 +724,7 @@ class Select(Operator):
                 raise ValueError("no predicate function")
             # fetch the batch from scanned input, process each tuple to a new batch
             batch = []
-            block= self.input.get_next()
+            block= ray.get(self.input.get_next.remote())
             # if nothing from input, return None
             if block == None:
                 return None

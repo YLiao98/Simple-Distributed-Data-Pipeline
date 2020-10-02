@@ -3,12 +3,13 @@ import pytest
 import filecmp
 import pdb
 
+ray.init()
 #simple test to test scan operator, compare the content with source file
 def testScan0():
-    testScan = Scan(filepath="../data/test1.txt")
+    testScan = Scan.remote(filepath="../data/test1.txt")
     outF = open("testScan.txt","w")
     while True:
-        batch = testScan.get_next()
+        batch = ray.get(testScan.get_next.remote())
         if batch == None: break
         for t in batch:
             line = ' '.join(x for x in t.tuple)
@@ -22,7 +23,7 @@ def testScan1():
     def testPredicate(input):
         return input[0] == "7"
 
-    testScan = Scan(filepath="../data/test1.txt",filter=testPredicate)
+    testScan = Scan.remote(filepath="../data/test1.txt",filter=testPredicate)
     total_batch = []
     with open("../data/test1.txt","r",newline = '') as f:
                 reader = csv.reader(f,delimiter=' ')
@@ -30,7 +31,7 @@ def testScan1():
     f.close()
     filtered_lst = list(filter(lambda x: x[0] == "7", lst))
     while True:
-        batch = testScan.get_next()
+        batch = ray.get(testScan.get_next.remote())
         if batch == None: break
         for t in batch:
             total_batch.append(t)
@@ -42,7 +43,7 @@ def testScan2():
     def testPredicate(input):
         return input[0] == "7"
 
-    testScan = Scan(filepath="../data/test1.txt",filter=testPredicate)
+    testScan = Scan.remote(filepath="../data/test1.txt",filter=testPredicate)
     ifSame = True
     total_batch = []
     #retrieve source file and get filtered content
@@ -52,7 +53,7 @@ def testScan2():
     f.close()
     filtered_lst = list(filter(lambda x: x[0] == "7", lst))
     while True:
-        batch = testScan.get_next()
+        batch = ray.get(testScan.get_next.remote())
         if batch == None: break
         for t in batch:
             total_batch.append(t)
@@ -69,8 +70,8 @@ def testSelect():
     def testPredicate(input):
         return input[0] == "7"
     #initial 
-    testScan = Scan(filepath="../data/test1.txt")
-    testSelect = Select(input=testScan,predicate = testPredicate)
+    testScan = Scan.remote(filepath="../data/test1.txt")
+    testSelect = Select.remote(input=testScan,predicate = testPredicate)
     ifSame = True
     total_batch = []
     #retrieve source file and get filtered content
@@ -81,7 +82,7 @@ def testSelect():
     filtered_lst = list(filter(lambda x: x[0] == "7", lst))
     # get filtered output from Select operator
     while True:
-        batch = testSelect.get_next()
+        batch = ray.get(testSelect.get_next.remote())
         if batch == None: break
         for t in batch:
             total_batch.append(t)
@@ -93,11 +94,11 @@ def testSelect():
 
 #test Project operator, compare the content from Project.get_next() to expected content file
 def testProject():
-    testScan = Scan(filepath="../data/test1.txt")
-    testProject = Project(input = testScan, fields_to_keep=[0])
+    testScan = Scan.remote(filepath="../data/test1.txt")
+    testProject = Project.remote(input = testScan, fields_to_keep=[0])
     outF = open("testProject.txt","w")
     while True:
-        batch = testProject.get_next()
+        batch = ray.get(testProject.get_next.remote())
         if batch == None: break
         for t in batch:
             line = ' '.join(x for x in t.tuple)
@@ -109,12 +110,12 @@ def testProject():
 def testJoin2():
     def predicate(input):
         return input[0] == "5"
-    testScan = Scan(filepath="../data/test1.txt",filter = predicate)
-    testScan1 = Scan(filepath="../data/test2.txt")
-    testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=0,right_join_attribute=0)
+    testScan = Scan.remote(filepath="../data/test1.txt",filter = predicate)
+    testScan1 = Scan.remote(filepath="../data/test2.txt")
+    testJoin = Join.remote(left_input=testScan, right_input=testScan1, left_join_attribute=0,right_join_attribute=0)
     outF = open("pytest_join2.txt","w")
     while True:
-        batch = testJoin.get_next()
+        batch = ray.get(testJoin.get_next.remote())
         if batch == None: break
         for t in batch:
             line = ' '.join(x for x in t.tuple)
@@ -127,12 +128,12 @@ def testJoin2():
 def testJoin():
     def predicate(input):
         return input[0] == "5"
-    testScan = Scan(filepath="../data/test1.txt",filter = predicate)
-    testScan1 = Scan(filepath="../data/test2.txt")
-    testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0)
+    testScan = Scan.remote(filepath="../data/test1.txt",filter = predicate)
+    testScan1 = Scan.remote(filepath="../data/test2.txt")
+    testJoin = Join.remote(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0)
     outF = open("pytest_join.txt","w")
     while True:
-        batch = testJoin.get_next()
+        batch = ray.get(testJoin.get_next.remote())
         if batch == None: break
         for t in batch:
             line = ' '.join(x for x in t.tuple)
@@ -144,11 +145,11 @@ def testJoin():
 def testGroupby2():
     def testAgg(input):
         return round(sum(input)/len(input), 1)
-    testScan = Scan(filepath="../data/test2.txt")
-    testGroupby2 = GroupBy(input=testScan,key = 1, value=2,agg_fun=testAgg)
+    testScan = Scan.remote(filepath="../data/test2.txt")
+    testGroupby2 = GroupBy.remote(input=testScan,key = 1, value=2,agg_fun=testAgg)
     outF = open("testGroupby.txt","w")
     while True:
-        batch = testGroupby2.get_next()
+        batch = ray.get(testGroupby2.get_next.remote())
         if batch == None: break
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
@@ -160,10 +161,10 @@ def testGroupby2():
 def testGroupby1():
     def testAgg(input):
         return round(sum(input)/len(input),1)
-    testScan = Scan(filepath="../data/test2.txt")
-    testGroupby = GroupBy(input=testScan,key = None, value=2,agg_fun=testAgg)
+    testScan = Scan.remote(filepath="../data/test2.txt")
+    testGroupby = GroupBy.remote(input=testScan,key = None, value=2,agg_fun=testAgg)
     while True:
-        batch = testGroupby.get_next()
+        batch = ray.get(testGroupby.get_next.remote())
         if batch == None: break
         aggregated_val=batch[0].tuple[0]
     assert aggregated_val == "3.6", "Groupby operation failed, incorrect value on aggregated result"
@@ -171,11 +172,11 @@ def testGroupby1():
 #test OrderBy operator, in this test, we test with reversing
 def testOrderBy1():
 
-    testScan = Scan(filepath="../data/testSort.txt")
-    testOrderby = OrderBy(input=testScan,comparator=lambda x : x.tuple[1], ASC=False)
+    testScan = Scan.remote(filepath="../data/testSort.txt")
+    testOrderby = OrderBy.remote(input=testScan,comparator=lambda x : x.tuple[1], ASC=False)
     outF = open("testOrderby.txt","w")
     while True:
-        batch = testOrderby.get_next()
+        batch = ray.get(testOrderby.get_next.remote())
         if batch == None: break
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
@@ -186,11 +187,11 @@ def testOrderBy1():
 #test OrderBy operator, in this test, we test without reversing
 def testOrderBy2():
 
-    testScan = Scan(filepath="../data/testSort.txt")
-    testOrderby = OrderBy(input=testScan,comparator=lambda x : x.tuple[0], ASC=True)
+    testScan = Scan.remote(filepath="../data/testSort.txt")
+    testOrderby = OrderBy.remote(input=testScan,comparator=lambda x : x.tuple[0], ASC=True)
     outF = open("testOrderby2.txt","w")
     while True:
-        batch = testOrderby.get_next()
+        batch = ray.get(testOrderby.get_next.remote())
         if batch == None: break
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
@@ -201,11 +202,11 @@ def testOrderBy2():
 #test top K operator, k = 3
 def testTopK():
 
-    testScan = Scan(filepath="../data/test1.txt")
-    testHisto = Histogram(input=testScan,key=0)
+    testScan = Scan.remote(filepath="../data/test1.txt")
+    testHisto = Histogram.remote(input=testScan,key=0)
     outF = open("testHisto.txt","w")
     while True:
-        batch = testHisto.get_next()
+        batch = ray.get(testHisto.get_next.remote())
         if batch == None: break
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
@@ -221,12 +222,12 @@ def testTask1():
         return input[1] == "2"
     def testAgg(input):
         return round(sum(input)/len(input),1)
-    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
-    testScan2 = Scan(filepath="../data/test2.txt",filter = predicate1)
-    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
-    testGroupby = GroupBy(input = testJoin,key=None,value=4,agg_fun=testAgg)
+    testScan1 = Scan.remote(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan.remote(filepath="../data/test2.txt",filter = predicate1)
+    testJoin = Join.remote(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testGroupby = GroupBy.remote(input = testJoin,key=None,value=4,agg_fun=testAgg)
     while True:
-        batch = testGroupby.get_next()
+        batch = ray.get(testGroupby.get_next.remote())
         if batch == None: break
         aggregated_val=batch[0].tuple[0]
     assert aggregated_val == "3.2", "task 1 operation failed, incorrect value on aggregated result"
@@ -238,15 +239,15 @@ def testTask2():
         return input[0] == "7"
     def testAgg(input):
         return round(sum(input)/len(input),1)
-    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
-    testScan2 = Scan(filepath="../data/test2.txt")
-    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
-    testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=testAgg)
-    testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False)
-    testTopK = TopK(input=testOrderby,k = 1)
-    testProject = Project(input=testTopK,fields_to_keep=[0])
+    testScan1 = Scan.remote(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan.remote(filepath="../data/test2.txt")
+    testJoin = Join.remote(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testGroupby = GroupBy.remote(input = testJoin,key=3,value=4,agg_fun=testAgg)
+    testOrderby = OrderBy.remote(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False)
+    testTopK = TopK.remote(input=testOrderby,k = 1)
+    testProject = Project.remote(input=testTopK,fields_to_keep=[0])
     while True:
-        batch = testProject.get_next()
+        batch = ray.get(testProject.get_next.remote())
         if batch == None: break
         output=batch[0].tuple[0]
     assert output == "1", "task 2 operation failed, incorrect value."
@@ -257,14 +258,14 @@ def testTask3():
         return input[0] == "6"
     def predicate1(input):
         return input[1] == "2"
-    testScan1 = Scan(filepath="../data/test1.txt",filter = predicate)
-    testScan2 = Scan(filepath="../data/test2.txt",filter=predicate1)
-    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
-    testHisto = Histogram(input=testJoin,key=4)
-    testOrderby = OrderBy(input=testHisto,comparator= lambda x: x.tuple[0],ASC=True)
+    testScan1 = Scan.remote(filepath="../data/test1.txt",filter = predicate)
+    testScan2 = Scan.remote(filepath="../data/test2.txt",filter=predicate1)
+    testJoin = Join.remote(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0)
+    testHisto = Histogram.remote(input=testJoin,key=4)
+    testOrderby = OrderBy.remote(input=testHisto,comparator= lambda x: x.tuple[0],ASC=True)
     outF = open("testTask3.txt","w")
     while True:
-        batch = testOrderby.get_next()
+        batch = ray.get(testOrderby.get_next.remote())
         if batch == None: break
         for t in batch:    
             line = ' '.join(str(x) for x in t.tuple)
