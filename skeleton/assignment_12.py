@@ -122,7 +122,7 @@ class Scan(Operator):
         self.read_file = []
 
     # retrieve the file
-    def get_file(self):
+    def __get_file(self):
         # read each line from the file and split the empty space 
         try:
             lst = []
@@ -147,7 +147,7 @@ class Scan(Operator):
         batch = []
         # process each line from the file to a tuple, and add it to the block
         if self.read_file == []:
-            self.read_file = self.get_file()
+            self.read_file = self.__get_file()
         block = self.read_file[self.curr:self.curr+self.batch_size]
         # block size less than batch size means we are at the end of file
         if len(block) < self.batch_size:
@@ -212,6 +212,7 @@ class Join(Operator):
         self.left_join_attribute = left_join_attribute
         self.right_join_attribute = right_join_attribute
         self.hashtable = dict()
+        self.hasBuiltTable = False
         self.joinedTuple = []
         self.hasJoinedTuple = False
         self.curr = 0
@@ -220,13 +221,10 @@ class Join(Operator):
 
     # Returns next batch of joined tuples (or None if done)
     def get_next(self):
-        if self.end_of_batch: 
-            self.joinedTuple = []
-            return None
         # declare a batch
         batch = []
         logger.debug("Join: at get_next()")
-        if not self.hasJoinedTuple:
+        if not self.hasBuiltTable:
             # First, we load up all the tuples from the right input into the hash table
             while True:
                 right_upstream = self.right_input.get_next()
@@ -239,30 +237,22 @@ class Join(Operator):
                     else:
                         self.hashtable[key] = [r.tuple]
             logger.debug("right input done")
-            # Then for each tuple in the left input, we match and yield the joined output tuple to batch
-            while True:
-                left_upstream = self.left_input.get_next()
-                if left_upstream == None:
-                    break
-                for l in left_upstream:
-                    key = l.tuple[self.left_join_attribute]
-                    if key in self.hashtable:
-                        for r in self.hashtable[key]:
-                            output = list(l.tuple)
-                            output.extend(list(r))
-                            logger.debug(str(("in outputlist are: ", output)))
-                            self.joinedTuple.append(ATuple(tuple=tuple(output),operator=self))
-            logger.debug("left input done")
-            self.hasJoinedTuple = True
-        logger.debug("joined tuples should be done.")
-        if len(self.joinedTuple) < self.batch_size:
-            self.end_of_batch = True
-            return self.joinedTuple
-        else:
-            batch = self.joinedTuple[self.curr:self.curr + self.batch_size]
-            self.curr += self.batch_size
-            self.joinedTuple = self.joinedTuple[self.curr:]
-            return batch
+        self.hasBuiltTable = True
+        # Then for each tuple in the left input, we match and yield the joined output tuple to batch
+        left_upstream = self.left_input.get_next()
+        if left_upstream == None:
+            return None
+        for l in left_upstream:
+            key = l.tuple[self.left_join_attribute]
+            if key in self.hashtable:
+                for r in self.hashtable[key]:
+                    output = list(l.tuple)
+                    output.extend(list(r))
+                    logger.debug(str(("in outputlist are: ", output)))
+                    batch.append(ATuple(tuple=tuple(output),operator=self))
+        logger.debug("left input batch done")
+
+        return batch
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
