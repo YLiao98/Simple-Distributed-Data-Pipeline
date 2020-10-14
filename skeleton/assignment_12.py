@@ -34,11 +34,21 @@ class ATuple:
         self.tuple = tuple
         self.metadata = metadata
         self.operator = operator
-
+        self.index = 0
+        self.limit = 5000
     # Returns the lineage of self
-    def lineage() -> List[ATuple]:
+    def lineage(self):
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        res = []
+        l = self.operator.lineage([self])
+        for lst in l:
+            for atuple in lst:
+                res.append(atuple)
+        return res
+        
+
+
+
 
     # Returns the Where-provenance of the attribute at index 'att_index' of self
     def where(att_index) -> List[Tuple]:
@@ -117,9 +127,11 @@ class Scan(Operator):
         read_file: get the input from file
         """
         self.end_of_file = False
+        self.track_prov = track_prov
         self.curr=0
         self.batch_size=5000
-        self.read_file = []
+        self.cached = []
+        self.batch = []
 
     # retrieve the file
     def __get_file(self):
@@ -142,13 +154,14 @@ class Scan(Operator):
         logger.debug("Scan: at get_next()")
         if self.end_of_file: 
             logger.debug("end of file")
+            self.curr = 0
             return None
         # initialize a batch
         batch = []
         # process each line from the file to a tuple, and add it to the block
-        if self.read_file == []:
-            self.read_file = self.__get_file()
-        block = self.read_file[self.curr:self.curr+self.batch_size]
+        if self.cached == []:
+            self.cached = self.__get_file()
+        block = self.cached[self.curr:self.curr+self.batch_size]
         # block size less than batch size means we are at the end of file
         if len(block) < self.batch_size:
             self.end_of_file = True
@@ -168,7 +181,11 @@ class Scan(Operator):
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        self.batch = []
+        for t in tuples:
+            if list(t.tuple) in self.cached:
+                self.batch.append([t])
+        return self.batch
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -202,10 +219,12 @@ class Join(Operator):
         """properties:
         hashtable: hashtable for storing 
         joinedTuple: joined result 
-        hasJoinedTuple: check if joinedTuple is completed
+        hasBuiltTable: check if all the keys are loaded
         curr:current position at joinedtuples
         batch_size: size of output from get_next()
         end_of_batch: bool var to tell if we are at the end of batch
+        left_table: a dictionary for left input
+        right_table: a dictionary for right input
         """
         self.left_input = left_input
         self.right_input = right_input
@@ -213,12 +232,16 @@ class Join(Operator):
         self.right_join_attribute = right_join_attribute
         self.hashtable = dict()
         self.hasBuiltTable = False
-        self.joinedTuple = []
-        self.hasJoinedTuple = False
         self.curr = 0
         self.batch_size = 5000
         self.end_of_batch = False
-
+        self.track_prov = track_prov
+        self.left_table = dict()
+        self.left_idx = 0
+        self.left_tuple_len = 0
+        self.right_table = dict()
+        self.right_idx = 0
+        self.right_tuple_len = 0
     # Returns next batch of joined tuples (or None if done)
     def get_next(self):
         # declare a batch
@@ -231,7 +254,15 @@ class Join(Operator):
                 if right_upstream == None:
                     break
                 for r in right_upstream:
+                    if self.right_tuple_len == 0:
+                        self.right_tuple_len = len(r.tuple)
                     key = r.tuple[self.right_join_attribute]
+                    if self.track_prov:
+                        if key not in self.right_table:
+                            self.right_table[key] = [r]
+                        else:
+                            self.right_table[key].append(r)
+                        #self.right_idx = self.right_idx + 1
                     if key in self.hashtable:
                         self.hashtable[r.tuple[self.right_join_attribute]].append(r.tuple)
                     else:
@@ -243,21 +274,48 @@ class Join(Operator):
         if left_upstream == None:
             return None
         for l in left_upstream:
+            if self.left_tuple_len == 0:
+                self.left_tuple_len = len(l.tuple)
             key = l.tuple[self.left_join_attribute]
+            if self.track_prov:
+                if key not in self.left_table:
+                    self.left_table[key] = [l]
+                else:
+                    self.left_table[key].append(l)
             if key in self.hashtable:
                 for r in self.hashtable[key]:
                     output = list(l.tuple)
                     output.extend(list(r))
-                    logger.debug(str(("in outputlist are: ", output)))
                     batch.append(ATuple(tuple=tuple(output),operator=self))
-        logger.debug("left input batch done")
 
         return batch
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
-        # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        res = []
+        for t in tuples:
+            tmp = []
+            lin = []
+            split_left = t.tuple[:self.left_tuple_len]
+            split_right = t.tuple[self.left_tuple_len:self.left_tuple_len+self.right_tuple_len]
+            if split_left[self.left_join_attribute] in self.left_table:
+                for i in self.left_table[split_left[self.left_join_attribute]]:
+                    if split_left == i.tuple:
+                        tmp+=self.left_input.lineage([i])
+            if split_right[self.right_join_attribute] in self.right_table:
+                for i in self.right_table[split_right[self.right_join_attribute]]:
+                    if split_right == i.tuple:
+                        tmp+=self.right_input.lineage([i])
+            #unpack the lineage for both inputs
+
+            for lst in tmp:
+                for e in lst:
+                    lin.append(e)
+            res.append(lin)
+        return res
+
+
+
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -288,14 +346,16 @@ class Project(Operator):
         # Initialize the fields
         self.input = input
         self.fields_to_keep=fields_to_keep
-
+        self.track_prov = track_prov
+        self.cache_mapping = dict()
+        self.idx = 0
     # Return next batch of projected tuples (or None if done)
     def get_next(self):
         logger.debug("Project: at get_next()")
         lst = []
         # if upstream pass None, return None
         next_batch = self.input.get_next()
-        if next_batch == None: 
+        if next_batch == None:
             logger.debug("Project done.")
             return None
         # if fields to keep is empty, we assign to batch directly to list
@@ -310,17 +370,32 @@ class Project(Operator):
                 for idx in sorted(fields_to_remove, reverse= True):
                     del l[idx]
 
+
+                tmp_tuple = t
+                newTuple = ATuple(tuple=tuple(l),operator =self)
                 # convert back to tuple and yield
-                t.tuple = tuple(l)
-                t.operator=self
-                lst.append(t)
+                if self.track_prov:
+                    newTuple.index=self.idx
+                    self.cache_mapping[(self.idx, tuple(l))] = tmp_tuple
+                    self.idx = self.idx + 1
+                lst.append(newTuple)
         return lst
         
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
+        res = []
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        for t in tuples:
+            if (t.index,t.tuple) in self.cache_mapping:
+                input_mapping = self.cache_mapping[(t.index,t.tuple)]
+                logger.debug(input_mapping.tuple)
+                res += self.input.lineage([input_mapping])
+        return res
+                
+
+
+        
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -361,12 +436,14 @@ class GroupBy(Operator):
         self.key = key
         self.value = value
         self.agg_fun = agg_fun
+        self.track_prov = track_prov
         self.res = []
         self.hasAllTuples = False
         self.curr = 0
         self.batch_size = 5000
         self.end_of_batch = False
-
+        self.cache_mapping = dict()
+        self.cache = []
     # Returns aggregated value per distinct key in the input (or None if done)
     def get_next(self):
         logger.debug("GroupBy: at get_next()")
@@ -388,6 +465,8 @@ class GroupBy(Operator):
                         break
                     # then for each tuple, we update the tuple 
                     for atuple in upstream:
+                        if self.track_prov:
+                            self.cache.append(atuple)
                         self.res.append(int(atuple.tuple[self.value]))
             #all tuples upstream are gathered
             self.hasAllTuples = True
@@ -414,13 +493,15 @@ class GroupBy(Operator):
                     if upstream == None: break
                     for t in upstream:
                         g_attr = t.tuple[self.key]
+                        if self.track_prov:
+                            if g_attr not in self.cache_mapping:
+                                self.cache_mapping[g_attr] = []
+                            self.cache_mapping[g_attr].append(t)
                         # initialize it if not in the dictionary
                         if g_attr not in aggr:
                             aggr[g_attr] = []
                         # for that attribute, update the corresponding aggregate value
                         aggr[g_attr].append(int(t.tuple[self.value]))
-                logger.debug(str(("upstreamtuple in groupby: ", aggr)))
-                logger.debug("exit pulling")
                 # pass it to aggregate function and yield output tuple one by one
                 for g_attr in aggr:
                     output = tuple([g_attr, str(self.agg_fun(aggr[g_attr]))])
@@ -439,8 +520,30 @@ class GroupBy(Operator):
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
-        # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        res = []
+        remove_dup = []
+        if self.key == None:
+            for atuple in self.cache:
+                lin= self.input.lineage([atuple])
+                for lst in lin:
+                    for each in lst:
+                        if each not in remove_dup:
+                            remove_dup.append(each)
+            res.append(remove_dup)
+        else:
+            for t in tuples:
+                remove_dup = []
+                upstream_tuples = self.cache_mapping[t.tuple[0]]
+                logger.debug(upstream_tuples)
+                for each in upstream_tuples:
+                    lin = self.input.lineage([each])
+                    logger.debug(lin)
+                    for lst in lin:
+                        for e in lst:
+                            if e not in remove_dup:
+                                remove_dup.append(e)
+                res.append(remove_dup)
+        return res
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -558,7 +661,7 @@ class OrderBy(Operator):
         self.curr = 0
         self.batch_size = 5000
         self.end_of_batch = False
-
+        self.track_prov = track_prov
 
     # Returns the sorted input (or None if done)
     def get_next(self):
@@ -595,8 +698,7 @@ class OrderBy(Operator):
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
-        # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        return self.input.lineage(tuples)
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -624,6 +726,7 @@ class TopK(Operator):
         # initialize the field
         self.input = input
         self.limit = k
+        self.track_prov = track_prov
         """properties:
         res: total tuples from upstream
         hasAllTuples: total tuples from upstream
@@ -650,7 +753,7 @@ class TopK(Operator):
                 #fetching done? then break out the loop
                 if upstream == None: break
                 self.res += upstream
-        # prevent pulling again next time we call get_next()
+        # prevent pullilambda x : x.tuple[1]ng again next time we call get_next()
         self.hasAllTuples = True
         self.res = self.res[:self.limit]
         if len(self.res) <= self.batch_size:
@@ -665,8 +768,7 @@ class TopK(Operator):
 
     # Returns the lineage of the given tuples
     def lineage(self, tuples):
-        # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
-        pass
+        return self.input.lineage(tuples) # we don't need to process intermediate data for this operator
 
     # Returns the where-provenance of the attribute
     # at index 'att_index' for each tuple in 'tuples'
@@ -712,7 +814,6 @@ class Select(Operator):
             for atuple in block:
                 # verify if the tuple satisfies the predicate
                 if atuple is not None and self.predicate(atuple.tuple):
-                    atuple.operator= self
                     batch.append(atuple)
             return batch
         except ValueError as e:
