@@ -3,7 +3,7 @@ import pytest
 import filecmp
 import pdb
 
-'''
+
 def testScan0_lineage():
     testScan = Scan(filepath="../data/test1.txt")
     batch = testScan.get_next() #first batch
@@ -47,7 +47,7 @@ def testJoin_lineage():
     for each in lst:
         res.append(each.tuple)
     assert res == [('5','2'),('2','1','5')]
-'''
+
 def testGroupby_avg_lineage():
     def predicate(input):
         return input[0] == "5"
@@ -79,3 +79,81 @@ def testGroupby_key_lineage():
     for each in lst:
         res.append(each.tuple)
     assert len(res) == 4 and res == [('5','2'),('2','1','5'),('2','2','4'),('2','4','3')]
+
+def testTask1Example():
+    def predicate(input):
+        return input[0] == "0"
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    testScan1 = Scan(filepath="../data/text3.txt",filter = predicate,track_prov=True)
+    testScan2 = Scan(filepath="../data/text4.txt",track_prov=True)
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,track_prov=True)
+    testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=testAgg,track_prov=True)
+    testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,track_prov=True)
+    testTopK = TopK(input=testOrderby,k = 1,track_prov=True)
+    testProject = Project(input=testTopK,fields_to_keep=[0],track_prov=True)
+    res = []
+    lin = []
+    while True:
+        batch = testProject.get_next()
+        if batch == None: break
+        res += batch
+    logger.debug(res)
+    first_tuple = res[0]
+    lst = first_tuple.lineage()
+    for each in lst:
+        lin.append(each.tuple)
+    assert len(res)==1 and lin ==[('0','1'),('1','10','5'),('0','4'),('4','10','8'),('0','18'),('18','10','2')]
+
+def testWhere_scan():
+    testScan1 = Scan(filepath="../data/test1.txt",track_prov=True)
+    batch = testScan1.get_next() #first batch
+    first_tuple = batch[13] #first tuple in the batch
+    first_tuple_where=first_tuple.where(1)
+    assert str(first_tuple) == "('4', '5')" and str(first_tuple_where) == "[('../data/test1.txt', 14, ('4', '5'), '5')]"
+
+def testWhere_project():
+    testScan1 = Scan(filepath="../data/test2.txt",track_prov=True)
+    testProject = Project(input=testScan1,fields_to_keep=[0,2],track_prov=True)
+    batch = testProject.get_next() #first batch
+    test_tuple = batch[13] #first tuple in the batch
+    test_tuple_where=test_tuple.where(1)
+    assert str(test_tuple) == "('5', '4')" and str(test_tuple_where) == "[('../data/test2.txt', 14, ('5', '1', '4'), '4')]"
+ 
+def testWhere_join():
+    def predicate(input):
+            return input[0] == "5"
+    testScan = Scan(filepath="../data/test1.txt",filter = predicate,track_prov=True)
+    testScan1 = Scan(filepath="../data/test2.txt",track_prov=True)
+    testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0,track_prov= True)
+    batch = testJoin.get_next()
+    test_tuple = batch[4]
+    test_tuple_where = test_tuple.where(3)
+    assert str(test_tuple) == "('5', '4', '4', '2', '3')" and str(test_tuple_where) == "[('../data/test2.txt', 9, ('4', '2', '3'), '2')]"   
+
+def testWhere_groupby_avg():
+    def predicate(input):
+        return input[0] == "5"
+    def testAgg(input):
+        return round(sum(input)/len(input), 1)
+    testScan = Scan(filepath="../data/test1.txt",filter = predicate,track_prov=True)
+    testScan1 = Scan(filepath="../data/test2.txt",track_prov=True)
+    testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0,track_prov= True)
+    testGrouby =GroupBy(input=testJoin,key = None, value = 4,agg_fun=testAgg,track_prov=True)
+    batch = testGrouby.get_next()
+    lst = batch[0].where(0)
+    assert len(batch) == 1 and str(lst)=="[('../data/test2.txt', 5, ('2', '1', '5'), '5'), ('../data/test2.txt', 6, ('2', '2', '4'), '4'), ('../data/test2.txt', 7, ('2', '4', '3'), '3'), ('../data/test2.txt', 8, ('4', '1', '4'), '4'), ('../data/test2.txt', 9, ('4', '2', '3'), '3'), ('../data/test2.txt', 10, ('4', '3', '1'), '1')]"
+
+def testWhere_groupby_key():
+    def predicate(input):
+        return input[0] == "5"
+    def testAgg(input):
+        return round(sum(input)/len(input), 1)
+    testScan = Scan(filepath="../data/test1.txt",filter = predicate,track_prov=True)
+    testScan1 = Scan(filepath="../data/test2.txt",track_prov=True)
+    testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0,track_prov= True)
+    testGrouby =GroupBy(input=testJoin,key = 1, value = 4,agg_fun=testAgg,track_prov=True)
+    batch = testGrouby.get_next()
+    lst = batch[1].where(1)
+    lst2 = batch[0].where(0)
+    assert len(batch) == 2 and str(lst) == "[('../data/test2.txt', 8, ('4', '1', '4'), '4'), ('../data/test2.txt', 9, ('4', '2', '3'), '3'), ('../data/test2.txt', 10, ('4', '3', '1'), '1')]" and str(lst2) == "[('../data/test1.txt', 18, ('5', '2'), '2')]"

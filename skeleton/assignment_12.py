@@ -36,6 +36,8 @@ class ATuple:
         self.operator = operator
         self.index = 0
         self.limit = 5000
+    def __repr__(self):
+        return str(self.tuple)
     # Returns the lineage of self
     def lineage(self):
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
@@ -51,9 +53,14 @@ class ATuple:
 
 
     # Returns the Where-provenance of the attribute at index 'att_index' of self
-    def where(att_index) -> List[Tuple]:
+    def where(self,att_index) -> List[Tuple]:
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        res = []
+        w = self.operator.where(att_index,[self])
+        for lst in w:
+            for w_tuple in lst:
+                res.append(w_tuple)
+        return res
 
     # Returns the How-provenance of self
     def how() -> string:
@@ -132,7 +139,8 @@ class Scan(Operator):
         self.batch_size=5000
         self.cached = []
         self.batch = []
-
+        self.mapping = dict()
+        self.idx = 1
     # retrieve the file
     def __get_file(self):
         # read each line from the file and split the empty space 
@@ -143,6 +151,7 @@ class Scan(Operator):
             with open(self.filepath,"r",newline = '') as f:
                 reader = csv.reader(f,delimiter=' ')
                 lst = list(reader)
+
             f.close()
             return lst
         except ValueError as e:
@@ -151,7 +160,6 @@ class Scan(Operator):
 
     # Returns next batch of tuples in given file (or None if file exhausted)
     def get_next(self):
-        logger.debug("Scan: at get_next()")
         if self.end_of_file: 
             logger.debug("end of file")
             self.curr = 0
@@ -170,7 +178,9 @@ class Scan(Operator):
             for w in row:
                 res.append(w)
             t = ATuple(tuple=tuple(res),operator=self)
-
+            #map each tuple to its line number in the source file
+            self.mapping[t] = self.idx
+            self.idx = self.idx + 1
             if t.tuple is not None and (self.filter is None or self.filter(t.tuple)):
                 batch.append(t)
         self.curr += self.batch_size
@@ -191,7 +201,12 @@ class Scan(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        res = []
+        for t in tuples:
+            if t in self.mapping:
+                line_num = self.mapping[t]
+                res.append([(self.filepath,line_num,t,t.tuple[att_index])])
+        return res
 
 # Equi-join operator
 class Join(Operator):
@@ -246,7 +261,6 @@ class Join(Operator):
     def get_next(self):
         # declare a batch
         batch = []
-        logger.debug("Join: at get_next()")
         if not self.hasBuiltTable:
             # First, we load up all the tuples from the right input into the hash table
             while True:
@@ -267,7 +281,6 @@ class Join(Operator):
                         self.hashtable[r.tuple[self.right_join_attribute]].append(r.tuple)
                     else:
                         self.hashtable[key] = [r.tuple]
-            logger.debug("right input done")
         self.hasBuiltTable = True
         # Then for each tuple in the left input, we match and yield the joined output tuple to batch
         left_upstream = self.left_input.get_next()
@@ -321,7 +334,19 @@ class Join(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        res = []
+        for t in tuples:
+            split_left = t.tuple[:self.left_tuple_len]
+            split_right = t.tuple[self.left_tuple_len:self.left_tuple_len+self.right_tuple_len]
+            if att_index <self.left_tuple_len:
+                for i in self.left_table[split_left[self.left_join_attribute]]:
+                    if split_left == i.tuple:
+                        res+=self.left_input.where(att_index,[i])
+            else:
+                for i in self.right_table[split_right[self.right_join_attribute]]:
+                    if split_right == i.tuple:
+                        res+=self.right_input.where(att_index-self.left_tuple_len,[i])
+        return res
 
 # Project operator
 class Project(Operator):
@@ -351,12 +376,10 @@ class Project(Operator):
         self.idx = 0
     # Return next batch of projected tuples (or None if done)
     def get_next(self):
-        logger.debug("Project: at get_next()")
         lst = []
         # if upstream pass None, return None
         next_batch = self.input.get_next()
         if next_batch == None:
-            logger.debug("Project done.")
             return None
         # if fields to keep is empty, we assign to batch directly to list
         if self.fields_to_keep == []:
@@ -389,7 +412,6 @@ class Project(Operator):
         for t in tuples:
             if (t.index,t.tuple) in self.cache_mapping:
                 input_mapping = self.cache_mapping[(t.index,t.tuple)]
-                logger.debug(input_mapping.tuple)
                 res += self.input.lineage([input_mapping])
         return res
                 
@@ -401,7 +423,14 @@ class Project(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        res = []
+        for t in tuples:
+            if(t.index,t.tuple) in self.cache_mapping:
+                input_mapping = self.cache_mapping[(t.index,t.tuple)]
+                res+=self.input.where(self.fields_to_keep[att_index],[input_mapping])
+        return res
+
+                
 
 # Group-by operator
 class GroupBy(Operator):
@@ -549,7 +578,28 @@ class GroupBy(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        res = []
+        remove_dup = dict()
+        if self.key == None:
+            for atuple in self.cache:
+                res += self.input.where(self.value,[atuple])
+        else:
+            for t in tuples:
+                remove_dup = []
+                upstream_tuples = self.cache_mapping[t.tuple[0]]
+                for each in upstream_tuples:
+                    if att_index == 1:
+                        where= self.input.where(self.value,[each])
+                    else:
+                        where = self.input.where(self.key,[each])
+                    [[unpack]] = where
+                    if unpack not in remove_dup:
+                        remove_dup.append(unpack)
+                ans = []
+                for each in remove_dup:
+                    ans.append(tuple(each))
+                res.append(ans)
+        return res
 
 # Custom histogram operator
 class Histogram(Operator):
@@ -704,7 +754,7 @@ class OrderBy(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        return self.input.where(att_index,tuples)
 
 # Top-k operator
 class TopK(Operator):
@@ -774,7 +824,7 @@ class TopK(Operator):
     # at index 'att_index' for each tuple in 'tuples'
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
-        pass
+        return self.input.where(att_index,tuples)
 
 # Filter operator
 class Select(Operator):
