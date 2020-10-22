@@ -2,7 +2,7 @@ import pytest
 import filecmp
 import pdb
 from assignment_12 import *
-'''
+
 def testScan0_lineage():
     testScan = Scan(filepath="../data/test1.txt")
     batch = testScan.get_next() #first batch
@@ -258,7 +258,7 @@ def testHow_Groupby():
         testOutput += batch
 
     assert testOutput[0].how() == "AVG((r7@4),(r94164@2))"
-'''
+
 def testHow_task3():
     def testAgg(input):
         return round(sum(input)/len(input),1)
