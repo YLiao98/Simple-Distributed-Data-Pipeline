@@ -1,9 +1,8 @@
-from assignment_12 import *
 import pytest
 import filecmp
 import pdb
-
-
+from assignment_12 import *
+'''
 def testScan0_lineage():
     testScan = Scan(filepath="../data/test1.txt")
     batch = testScan.get_next() #first batch
@@ -157,3 +156,127 @@ def testWhere_groupby_key():
     lst = batch[1].where(1)
     lst2 = batch[0].where(0)
     assert len(batch) == 2 and str(lst) == "[('../data/test2.txt', 8, ('4', '1', '4'), '4'), ('../data/test2.txt', 9, ('4', '2', '3'), '3'), ('../data/test2.txt', 10, ('4', '3', '1'), '1')]" and str(lst2) == "[('../data/test1.txt', 18, ('5', '2'), '2')]"
+
+def testHow_Scan():
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testScan.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "SCAN((f69219))"
+
+def testHow_Join():
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    def predicateHow(input):
+        return input[0] == "16"
+    testScan2 = Scan(filepath="../data/movie_ratings.txt",filter = predicateHow,track_prov=True,propagate_prov=True)
+    testJoin = Join(left_input=testScan,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,track_prov=True,propagate_prov=True)
+    testOutput2 = []
+    while True:
+        batch = testJoin.get_next()
+        if batch == None: break
+        testOutput2 += batch
+    assert testOutput2[0].how() == "JOIN((f69230*r94164))"
+
+
+def testHow_project():
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testProject = Project(input=testScan,fields_to_keep=[1],propagate_prov=True)
+    testOrderby = OrderBy(input=testProject,comparator=lambda x : x.tuple[0],track_prov=True, ASC=False,propagate_prov=True)
+    testTopK = TopK(input=testOrderby,k = 4,track_prov=True,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testTopK.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "SCAN((f69237))"
+
+def testHow_Orderby():
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testProject = Project(input=testScan,fields_to_keep=[1],propagate_prov=True)
+    testOrderby = OrderBy(input=testProject,comparator=lambda x : x.tuple[0],track_prov=True, ASC=False,propagate_prov=True)
+    
+    testOutput=[]
+    while True:
+        batch = testOrderby.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "SCAN((f69237))"
+
+def testHow_TopK():
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testProject = Project(input=testScan,fields_to_keep=[1],propagate_prov=True)
+    testOrderby = OrderBy(input=testProject,comparator=lambda x : x.tuple[0],track_prov=True, ASC=False,propagate_prov=True)
+    testTopK = TopK(input=testOrderby,k = 4,track_prov=True,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testTopK.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "SCAN((f69237))"
+
+def testHow_AVG():
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    def predicate(input):
+        return input[0] == "5"
+    testScan = Scan(filepath="../data/friends.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testAVG = GroupBy(input=testScan,key=None,value = 1,agg_fun=testAgg,track_prov=False,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testAVG.get_next()
+        if batch == None: break
+        testOutput += batch
+    assert testOutput[0].how() == "AVG((f69219@1608),(f69220@1622),(f69221@1221),(f69222@799),(f69223@1393),(f69224@604),(f69225@1025),(f69226@479),(f69227@170),(f69228@1513),(f69229@749),(f69230@16),(f69231@550),(f69232@1819),(f69233@27),(f69234@468),(f69235@618),(f69236@1423),(f69237@925),(f69238@1675))"
+
+def testHow_Groupby():
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    def predicate(input):
+        return input[0] == "6" or input[0] == "16"
+    testScan = Scan(filepath="../data/movie_ratings.txt",filter = predicate,track_prov=True,propagate_prov=True)
+    testAVG = GroupBy(input=testScan,key=1,value = 2,agg_fun=testAgg,track_prov=False,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testAVG.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "AVG((r7@4),(r94164@2))"
+'''
+def testHow_task3():
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    def predicate(input):
+        return input[0] == "6"
+    def predicate3(input):
+        return input[0] == "66"
+    testScan1 = Scan(filepath="../data/friends.txt",filter = predicate,propagate_prov=True)
+    testScan2 = Scan(filepath="../data/movie_ratings.txt",filter=predicate3,propagate_prov = True)
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,propagate_prov=True)
+    testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=testAgg,propagate_prov= True)
+    testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,propagate_prov=True)
+    testTopK = TopK(input=testOrderby,k = 1,propagate_prov=True)
+    testProject = Project(input=testTopK,fields_to_keep=[0],propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testProject.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert testOutput[0].how() == "AVG((f15635*r218353@5))"

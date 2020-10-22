@@ -34,10 +34,10 @@ class ATuple:
         self.tuple = tuple
         self.metadata = metadata
         self.operator = operator
-        self.index = 0
-        self.limit = 5000
+
     def __repr__(self):
         return str(self.tuple)
+    
     # Returns the lineage of self
     def lineage(self):
         # YOUR CODE HERE (ONLY FOR TASK 1 IN ASSIGNMENT 2)
@@ -63,12 +63,12 @@ class ATuple:
         return res
 
     # Returns the How-provenance of self
-    def how() -> string:
+    def how(self) -> str:
         # YOUR CODE HERE (ONLY FOR TASK 3 IN ASSIGNMENT 2)
-        pass
+        return self.operator.how([self])
 
     # Returns the input tuples with responsibility \rho >= 0.5 (if any)
-    def responsible_inputs() -> List[Tuple]:
+    def responsible_inputs(self) -> List[Tuple]:
         # YOUR CODE HERE (ONLY FOR TASK 4 IN ASSIGNMENT 2)
         pass
 
@@ -179,8 +179,15 @@ class Scan(Operator):
                 res.append(w)
             t = ATuple(tuple=tuple(res),operator=self)
             #map each tuple to its line number in the source file
-            self.mapping[t] = self.idx
+            if self.track_prov:
+                self.mapping[t] = self.idx
+            if self.propagate_prov:
+                if self.filepath == "../data/friends.txt":
+                    t.metadata = "f" + str(self.idx)
+                else:
+                    t.metadata = "r" + str(self.idx)
             self.idx = self.idx + 1
+                
             if t.tuple is not None and (self.filter is None or self.filter(t.tuple)):
                 batch.append(t)
         self.curr += self.batch_size
@@ -206,6 +213,15 @@ class Scan(Operator):
             if t in self.mapping:
                 line_num = self.mapping[t]
                 res.append([(self.filepath,line_num,t,t.tuple[att_index])])
+        return res
+    
+    # returns the how-provenance of given tuple
+    def how(self, tuples):
+        res = ""
+        for i in range(0, len(tuples)):
+            res += "SCAN(("+tuples[i].metadata+"))"
+            if i != len(tuples) - 1 :
+                res += ","
         return res
 
 # Equi-join operator
@@ -278,9 +294,9 @@ class Join(Operator):
                             self.right_table[key].append(r)
                         #self.right_idx = self.right_idx + 1
                     if key in self.hashtable:
-                        self.hashtable[r.tuple[self.right_join_attribute]].append(r.tuple)
+                        self.hashtable[r.tuple[self.right_join_attribute]].append(r)
                     else:
-                        self.hashtable[key] = [r.tuple]
+                        self.hashtable[key] = [r]
         self.hasBuiltTable = True
         # Then for each tuple in the left input, we match and yield the joined output tuple to batch
         left_upstream = self.left_input.get_next()
@@ -298,8 +314,12 @@ class Join(Operator):
             if key in self.hashtable:
                 for r in self.hashtable[key]:
                     output = list(l.tuple)
-                    output.extend(list(r))
-                    batch.append(ATuple(tuple=tuple(output),operator=self))
+                    output.extend(list(r.tuple))
+                    output = tuple(output)
+                    atuple = ATuple(tuple=output,operator=self)
+                    if self.propagate_prov:
+                        atuple.metadata = "("+l.metadata +"*"+ r.metadata+")"
+                    batch.append(atuple)
 
         return batch
 
@@ -347,6 +367,15 @@ class Join(Operator):
                     if split_right == i.tuple:
                         res+=self.right_input.where(att_index-self.left_tuple_len,[i])
         return res
+    # Return the how-provenance of joined tuples
+    def how(self, tuples):
+        res = ""
+        for i in range(0, len(tuples)):
+            res += "JOIN("+tuples[i].metadata+")"
+            if i != len(tuples) - 1 :
+                res += ","
+        return res
+        
 
 # Project operator
 class Project(Operator):
@@ -374,6 +403,10 @@ class Project(Operator):
         self.track_prov = track_prov
         self.cache_mapping = dict()
         self.idx = 0
+        if self.input.name == "Join" or self.input.name == "Scan" or self.input.name == "AVG":
+            self.prov_name = self.input.name.upper()
+        else:
+            self.prov_name = self.input.prov_name
     # Return next batch of projected tuples (or None if done)
     def get_next(self):
         lst = []
@@ -396,6 +429,8 @@ class Project(Operator):
 
                 tmp_tuple = t
                 newTuple = ATuple(tuple=tuple(l),operator =self)
+                if self.propagate_prov:
+                    newTuple.metadata = tmp_tuple.metadata
                 # convert back to tuple and yield
                 if self.track_prov:
                     newTuple.index=self.idx
@@ -430,7 +465,16 @@ class Project(Operator):
                 res+=self.input.where(self.fields_to_keep[att_index],[input_mapping])
         return res
 
-                
+    # Returns the how-provenance of the tuple
+    def how(self, tuples):
+        res = ""
+        for i in range(0,len(tuples)):
+            logger.debug(tuples[i])
+            logger.debug(tuples[i].metadata)
+            res += self.prov_name + "("+tuples[i].metadata+")"
+            if i != len(tuples) - 1 :
+                    res += ","
+        return res        
 
 # Group-by operator
 class GroupBy(Operator):
@@ -466,6 +510,8 @@ class GroupBy(Operator):
         self.value = value
         self.agg_fun = agg_fun
         self.track_prov = track_prov
+        self.propagate_prov = propagate_prov
+        self.name = "AVG"
         self.res = []
         self.hasAllTuples = False
         self.curr = 0
@@ -473,9 +519,10 @@ class GroupBy(Operator):
         self.end_of_batch = False
         self.cache_mapping = dict()
         self.cache = []
+        self.prov_str = ""
+        self.prov_mapping = dict()
     # Returns aggregated value per distinct key in the input (or None if done)
     def get_next(self):
-        logger.debug("GroupBy: at get_next()")
         # declare a batch
         batch = []
         if self.end_of_batch: 
@@ -490,12 +537,15 @@ class GroupBy(Operator):
                 while True:
                     upstream = self.input.get_next()
                     if upstream == None: 
-                        logger.debug("exit loop")
                         break
                     # then for each tuple, we update the tuple 
                     for atuple in upstream:
                         if self.track_prov:
                             self.cache.append(atuple)
+                        if self.propagate_prov:
+                            copy_str = atuple.metadata[:-1]
+                            copy_str += "@"+atuple.tuple[self.value]+")"
+                            self.prov_str += copy_str+","
                         self.res.append(int(atuple.tuple[self.value]))
             #all tuples upstream are gathered
             self.hasAllTuples = True
@@ -503,6 +553,9 @@ class GroupBy(Operator):
             aggr_res = [str(self.agg_fun(self.res))]
             res = tuple(aggr_res)
             output = ATuple(tuple = res, operator = self)
+            if self.propagate_prov:
+                self.prov_str = self.prov_str[:-1]
+                output.metadata=self.prov_str
             self.end_of_batch = True
             return [output]
         else:
@@ -511,7 +564,6 @@ class GroupBy(Operator):
             # use a dict to keep track of all groups
             aggr = dict()
             if self.end_of_batch == None: 
-                logger.debug("Groupby done")
                 self.res = []
                 return None
             # gather all tuples upstream
@@ -522,6 +574,12 @@ class GroupBy(Operator):
                     if upstream == None: break
                     for t in upstream:
                         g_attr = t.tuple[self.key]
+                        if self.propagate_prov:
+                            if g_attr not in self.prov_mapping:
+                                self.prov_mapping[g_attr] = ""
+                            copy_str = t.metadata[:-1]
+                            copy_str += "@"+t.tuple[self.value]+")"
+                            self.prov_mapping[g_attr] += copy_str+","
                         if self.track_prov:
                             if g_attr not in self.cache_mapping:
                                 self.cache_mapping[g_attr] = []
@@ -531,10 +589,15 @@ class GroupBy(Operator):
                             aggr[g_attr] = []
                         # for that attribute, update the corresponding aggregate value
                         aggr[g_attr].append(int(t.tuple[self.value]))
+                        
                 # pass it to aggregate function and yield output tuple one by one
                 for g_attr in aggr:
                     output = tuple([g_attr, str(self.agg_fun(aggr[g_attr]))])
-                    self.res.append(ATuple(tuple=output,operator=self))
+                    atuple = ATuple(tuple=output,operator=self)
+                    if self.propagate_prov:
+                        self.prov_mapping[g_attr] = self.prov_mapping[g_attr][:-1]
+                        atuple.metadata = self.prov_mapping[g_attr]
+                    self.res.append(atuple)
                 self.hasAllTuples = True
             # we return correct batch size
             if len(self.res) < self.batch_size:
@@ -599,6 +662,13 @@ class GroupBy(Operator):
                 for each in remove_dup:
                     ans.append(tuple(each))
                 res.append(ans)
+        return res
+    # Returns the how-provenance of tuples
+    def how(self,tuples):
+        res = ""
+        for i in range(0, len(tuples)):
+            res += self.name +"("+tuples[i].metadata+"),"
+        res = res[:-1]
         return res
 
 # Custom histogram operator
@@ -712,7 +782,11 @@ class OrderBy(Operator):
         self.batch_size = 5000
         self.end_of_batch = False
         self.track_prov = track_prov
-
+        logger.debug(self.name)
+        if self.input.name == "Join" or self.input.name == "Scan" or self.input.name == "AVG":
+            self.prov_name = self.input.name.upper()
+        else:
+            self.prov_name = self.input.prov_name
     # Returns the sorted input (or None if done)
     def get_next(self):
         logger.debug("OrderBy at get_next()")
@@ -755,7 +829,14 @@ class OrderBy(Operator):
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
         return self.input.where(att_index,tuples)
-
+    # Returns the how_provenance of tuples
+    def how(self, tuples):
+        res = ""
+        for i in range(0,len(tuples)):
+            res += self.prov_name + "("+tuples[i].metadata+")"
+            if i != len(tuples) - 1 :
+                    res += ","
+        return res        
 # Top-k operator
 class TopK(Operator):
     """TopK operator.
@@ -789,6 +870,11 @@ class TopK(Operator):
         self.curr = 0
         self.batch_size = 5000
         self.end_of_batch = False
+        if self.input.name == "Join" or self.input.name == "Scan" or self.input.name == "AVG":
+            self.prov_name = self.input.name.upper()
+        else:
+            self.prov_name = self.input.prov_name
+
     # Returns the first k tuples in the input (or None if done)
     def get_next(self):
         logger.debug("TopK at get_next()")
@@ -825,7 +911,14 @@ class TopK(Operator):
     def where(self, att_index, tuples):
         # YOUR CODE HERE (ONLY FOR TASK 2 IN ASSIGNMENT 2)
         return self.input.where(att_index,tuples)
-
+    # Returns the how_provenance of tuples
+    def how(self, tuples):
+        res = ""
+        for i in range(0,len(tuples)):
+            res += self.prov_name + "("+tuples[i].metadata+")"
+            if i != len(tuples) - 1 :
+                    res += ","
+        return res        
 # Filter operator
 class Select(Operator):
     """Select operator.
