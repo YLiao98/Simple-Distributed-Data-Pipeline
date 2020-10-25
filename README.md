@@ -43,4 +43,30 @@ Note that movie id is not needed in task 2. The 'recommendation' query of the se
 
 ## Running queries of Assignment 2
 
-TODO
+### Task 4 Retrieve the lineage of Task 2
+Run the task as shown below
+
+```bash
+$ python assignment_12.py --task 4 --friends [path_to_friends_file.txt] --ratings [path_to_ratings_file.txt] --uid [user_id] 
+```
+
+### Task 5 Retrieve the where-provenance of Task 1 
+Run the task as shown below
+
+```bash
+$ python assignment_12.py --task 5 --friends [path_to_friends_file.txt] --ratings [path_to_ratings_file.txt] --uid [user_id] --mid [movie_id]
+```
+
+### Task 6 Retrieve the How_provenance of Query in Task 2
+Run the task as shown below
+
+```bash
+$ python assignment_12.py --task 6 --friends [path_to_friends_file.txt] --ratings [path_to_ratings_file.txt] --uid [user_id] 
+```
+
+### Task 7 Retrieve the Responsibility with p >= 0.5 of lineage tuples in Task 2
+Run the task as shown below
+
+```bash
+$ python assignment_12.py --task 7 --friends [path_to_friends_file.txt] --ratings [path_to_ratings_file.txt] --uid [user_id] 
+```
