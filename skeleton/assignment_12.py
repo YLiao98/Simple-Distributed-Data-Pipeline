@@ -69,8 +69,8 @@ class ATuple:
 
     # Returns the input tuples with responsibility \rho >= 0.5 (if any)
     def responsible_inputs(self) -> List[Tuple]:
-        # YOUR CODE HERE (ONLY FOR TASK 4 IN ASSIGNMENT 2)
-        pass
+        # only for query in task 3
+        return self.operator.responsible_inputs(self)
 
 # Data operator
 class Operator:
@@ -161,7 +161,6 @@ class Scan(Operator):
     # Returns next batch of tuples in given file (or None if file exhausted)
     def get_next(self):
         if self.end_of_file: 
-            logger.debug("end of file")
             self.curr = 0
             return None
         # initialize a batch
@@ -182,10 +181,11 @@ class Scan(Operator):
             if self.track_prov:
                 self.mapping[t] = self.idx
             if self.propagate_prov:
-                if self.filepath == "../data/friends.txt":
-                    t.metadata = "f" + str(self.idx)
+                #if self.filepath == "../data/text3.txt":
+                if len(t.tuple) == 2:
+                    t.metadata = "(f" + str(self.idx)+")"
                 else:
-                    t.metadata = "r" + str(self.idx)
+                    t.metadata = "(r" + str(self.idx)+")"
             self.idx = self.idx + 1
                 
             if t.tuple is not None and (self.filter is None or self.filter(t.tuple)):
@@ -219,10 +219,11 @@ class Scan(Operator):
     def how(self, tuples):
         res = ""
         for i in range(0, len(tuples)):
-            res += "SCAN(("+tuples[i].metadata+"))"
+            res += "SCAN("+tuples[i].metadata+")"
             if i != len(tuples) - 1 :
                 res += ","
         return res
+    
 
 # Equi-join operator
 class Join(Operator):
@@ -283,6 +284,7 @@ class Join(Operator):
                 right_upstream = self.right_input.get_next()
                 if right_upstream == None:
                     break
+                
                 for r in right_upstream:
                     if self.right_tuple_len == 0:
                         self.right_tuple_len = len(r.tuple)
@@ -318,7 +320,7 @@ class Join(Operator):
                     output = tuple(output)
                     atuple = ATuple(tuple=output,operator=self)
                     if self.propagate_prov:
-                        atuple.metadata = "("+l.metadata +"*"+ r.metadata+")"
+                        atuple.metadata = "("+l.metadata[1:-1] +"*"+ r.metadata[1:-1]+")"
                     batch.append(atuple)
 
         return batch
@@ -375,7 +377,7 @@ class Join(Operator):
             if i != len(tuples) - 1 :
                 res += ","
         return res
-        
+    
 
 # Project operator
 class Project(Operator):
@@ -469,12 +471,17 @@ class Project(Operator):
     def how(self, tuples):
         res = ""
         for i in range(0,len(tuples)):
-            logger.debug(tuples[i])
-            logger.debug(tuples[i].metadata)
+            # gather metadata processed at forward propagation
             res += self.prov_name + "("+tuples[i].metadata+")"
             if i != len(tuples) - 1 :
                     res += ","
         return res        
+    def responsible_inputs(self,t):
+        # only process this at OrderBy
+        res = []
+        res = self.input.input.responsible_inputs(t)
+        
+        return res
 
 # Group-by operator
 class GroupBy(Operator):
@@ -521,6 +528,7 @@ class GroupBy(Operator):
         self.cache = []
         self.prov_str = ""
         self.prov_mapping = dict()
+        self.res_tuples = dict()
     # Returns aggregated value per distinct key in the input (or None if done)
     def get_next(self):
         # declare a batch
@@ -580,6 +588,8 @@ class GroupBy(Operator):
                             copy_str = t.metadata[:-1]
                             copy_str += "@"+t.tuple[self.value]+")"
                             self.prov_mapping[g_attr] += copy_str+","
+                            if g_attr not in self.res_tuples:
+                                self.res_tuples[g_attr] = []
                         if self.track_prov:
                             if g_attr not in self.cache_mapping:
                                 self.cache_mapping[g_attr] = []
@@ -589,7 +599,6 @@ class GroupBy(Operator):
                             aggr[g_attr] = []
                         # for that attribute, update the corresponding aggregate value
                         aggr[g_attr].append(int(t.tuple[self.value]))
-                        
                 # pass it to aggregate function and yield output tuple one by one
                 for g_attr in aggr:
                     output = tuple([g_attr, str(self.agg_fun(aggr[g_attr]))])
@@ -614,9 +623,11 @@ class GroupBy(Operator):
     def lineage(self, tuples):
         res = []
         remove_dup = []
+        # if we only doing aggregate, we simply pull the lineage from the previous operator
         if self.key == None:
             for atuple in self.cache:
                 lin= self.input.lineage([atuple])
+                # remove duplicates in lineage
                 for lst in lin:
                     for each in lst:
                         if each not in remove_dup:
@@ -626,10 +637,9 @@ class GroupBy(Operator):
             for t in tuples:
                 remove_dup = []
                 upstream_tuples = self.cache_mapping[t.tuple[0]]
-                logger.debug(upstream_tuples)
                 for each in upstream_tuples:
                     lin = self.input.lineage([each])
-                    logger.debug(lin)
+                    # remove duplicate in lineage 
                     for lst in lin:
                         for e in lst:
                             if e not in remove_dup:
@@ -782,19 +792,16 @@ class OrderBy(Operator):
         self.batch_size = 5000
         self.end_of_batch = False
         self.track_prov = track_prov
-        logger.debug(self.name)
         if self.input.name == "Join" or self.input.name == "Scan" or self.input.name == "AVG":
             self.prov_name = self.input.name.upper()
         else:
             self.prov_name = self.input.prov_name
     # Returns the sorted input (or None if done)
     def get_next(self):
-        logger.debug("OrderBy at get_next()")
         # declare a batch
         batch = []
         #if we are done with all input
         if self.end_of_batch: 
-            logger.debug("orderby done")
             return None
         # fetch all the batches upstream
         if not self.hasAllTuples:
@@ -804,7 +811,6 @@ class OrderBy(Operator):
                 if upstream == None: break
                 self.res += upstream
         # upstream pulling done
-        logger.debug("upstream pulling at Orderby Done")
         self.hasAllTuples=True
         # sort the whole result before we output batch
         self.res.sort(key = self.comparator, reverse = not self.ASC)
@@ -836,7 +842,83 @@ class OrderBy(Operator):
             res += self.prov_name + "("+tuples[i].metadata+")"
             if i != len(tuples) - 1 :
                     res += ","
-        return res        
+        return res      
+    # Return responsibility of each responsible tuples
+    def responsible_inputs(self, tuple):
+        res = []
+        match = dict()
+        # extract the values that contribute to the avg result
+        extract_metadata = []
+        raw_data = tuple.metadata.split('@')
+        raw_data.pop(0)
+        for v in raw_data:
+            extract_metadata.append(float(v[0]))
+        idx = 2
+        start = 0
+        # map the each value to responsible tuples(lineage)
+        lineage = tuple.lineage()
+        for each in extract_metadata:
+            if each not in match:
+                match[each] = []
+            match[each] += lineage[start:idx]
+            start += 2
+            idx += 2
+        avg_values = []
+        #gather all the average values for all other grouped tuples
+        for each in self.res:
+            avg_values.append(each.tuple[1])
+        # if there is only one aggregated result
+        logger.debug(extract_metadata)
+        if len(avg_values) == 1:
+            # if there is only one responsible tuple
+            if len(extract_metadata) == 1:
+                for t in match[extract_metadata[0]]:
+                    res.append((t,1))
+            # if there are two responsible tuples
+            elif len(extract_metadata) == 2:
+                for index,K in enumerate(extract_metadata):
+                    for t in match[K]:
+                        res.append((t,0.5))
+        else:                        
+            avg_values.pop(0)
+            # find the second largest value(duplicate of count as well)
+            second_max = float(max(avg_values))
+            # if there is only one responsible tuple
+            if len(extract_metadata) == 1:
+                for t in match[extract_metadata[0]]:
+                    res.append((t,1))
+            else:
+                # for each value that contribute to the avg, find out if the tuple corresponding to the value is counterfactual or not
+                for index, K in enumerate(extract_metadata):
+                    # find out if removing the tuple would set a new avg that change the query result
+                    rest_lst = extract_metadata[0:index]+extract_metadata[index+1:]
+                    rest_lst = list(map(float,rest_lst))
+                    rest_avg =  sum(rest_lst)/(len(rest_lst))
+                    # if we remove tuple and does not affect outcome
+                    if rest_avg >= second_max:
+                        # then we need to find the contingency
+                        for i, item in enumerate(rest_lst):
+                            rest_lst2 = rest_lst[0:i]+ rest_lst[i+1:]
+                            # if there are only two joined tuples responsible for the aggregated value
+                            if rest_lst2 == [] and (sum(rest_lst2) + float(K) )/len(rest_lst) >= second_max:
+                                # then for each of them tuple t, removal of the other tuple would make t a counterfactual cause
+                                for t in match[K]:
+                                    res.append((t,0.5))
+                            # else if rest of the list without contingency set does not affect query and rest of the list without tuple K and contingency set affect query result
+                            elif (sum(rest_lst2) + float(K) )/len(rest_lst) >= second_max and sum(rest_lst2)/len(rest_lst2) < second_max:
+                                # the tuple that has value K has a contingency set of one element, since we only remove one at a time
+                                # then if we reach this step, tuple is an actual cause with responsibility of 0.5
+                                for t in match[K]:
+                                    res.append((t,0.5))
+                    # else tuple is a counterfactual cause, with responsibility of 1.0
+                    else:
+                        for t in match[K]:
+                            res.append((t,1.0))
+
+
+            
+        return res
+
 # Top-k operator
 class TopK(Operator):
     """TopK operator.
@@ -877,7 +959,6 @@ class TopK(Operator):
 
     # Returns the first k tuples in the input (or None if done)
     def get_next(self):
-        logger.debug("TopK at get_next()")
         # declare a batch
         batch = []
         #if we are done with all input
@@ -943,7 +1024,6 @@ class Select(Operator):
     # Returns next batch of tuples that pass the filter (or None if done)
     def get_next(self):
         try:
-            logger.debug("Select: at get_next()")
             # throw exception if we don't have predicate function available
             if not self.predicate:
                 raise ValueError("no predicate function")
@@ -965,15 +1045,13 @@ class Select(Operator):
 
 if __name__ == "__main__":
 
-
-    logger.info("Assignment #1")
     #build CLI
-    parser = argparse.ArgumentParser(description="CS591L1 Assignment #1.\nTask #1: 'likeness' of a movie for user A and Movie M\nTask #2: recommend a movie for user A\nTask #3: explanation query that amounts to histogram of the ratings for movie M as given by user A's friends\n", formatter_class=RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description="CS591L1 Assignment #1 and #2.\nTask #1: 'likeness' of a movie for user A and Movie M\nTask #2: recommend a movie for user A\nTask #3: explanation query that amounts to histogram of the ratings for movie M as given by user A's friends\nTask #4: lineage for recommendation query\nTask #5: where-provenance for prediction query\nTask #6: How-provenance for recommendation query\nTask #7: responsibility fo lineange of recommendation query", formatter_class=RawTextHelpFormatter)
     parser.add_argument("-t", "--task", metavar="[task_number]", type=int, required=True, help="Task # to run", dest="task_num")
     parser.add_argument("-f", "--friends", metavar="[path_to_friends_txt]", type=str, required=True, help="Path to friends.txt", dest="friendFile")
     parser.add_argument("-r", "--ratings", metavar="[path_to_ratings_txt]", type=str, required=True, help="Path to movie_ratings.txt", dest="ratingFile")
     parser.add_argument("-u", "--uid", metavar="[user_id]", type=int, required=True, help="User id for task 1, 2 and 3", dest="uid")
-    parser.add_argument("-m", "--mid", metavar="[movie_id]", nargs='?',required=False, type=int, help="Movie id for task 1 and 3, movie id is not used in task 2", dest="mid")
+    parser.add_argument("-m", "--mid", metavar="[movie_id]", nargs='?',required=False, type=int, help="Movie id for task 1 and 3, movie id is not used in task 2,4,6 and 7", dest="mid")
     
     args = parser.parse_args()
 
@@ -1067,25 +1145,78 @@ if __name__ == "__main__":
     # NOTE (john): Add your changes for Task 4 to a new git branch 'ray'
 
 
-    eval("task" + str(args.task_num))()
-
-    logger.info("Assignment #2")
+   
 
     # TASK 1: Implement lineage query for movie recommendation
 
     # YOUR CODE HERE
-
+    def task4():
+        testScan1 = Scan(filepath=args.friendFile,filter = predicate1,track_prov=True)
+        testScan2 = Scan(filepath=args.ratingFile,track_prov=True)
+        testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,track_prov=True)
+        testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=aggrFunction,track_prov=True)
+        testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,track_prov=True)
+        testTopK = TopK(input=testOrderby,k = 1,track_prov=True)
+        testProject = Project(input=testTopK,fields_to_keep=[0],track_prov=True)
+        res = []
+        while True:
+            batch = testProject.get_next()
+            if batch == None: break
+            res += batch
+        logger.debug(res)
+        first_tuple = res[0]
+        lst = first_tuple.lineage()
+        logger.info("lineage for the recommendation is:")
+        logger.info(lst)
 
     # TASK 2: Implement where-provenance query for 'likeness' prediction
 
-    # YOUR CODE HERE
+    def task5():
+        testScan = Scan(filepath=args.friendFile,filter = predicate1,track_prov=True)
+        testScan1 = Scan(filepath=args.ratingFile,track_prov=True)
+        testJoin = Join(left_input=testScan, right_input=testScan1, left_join_attribute=1,right_join_attribute=0,track_prov= True)
+        testGrouby =GroupBy(input=testJoin,key = None, value = 4,agg_fun=aggrFunction,track_prov=True)
+        batch = testGrouby.get_next()
+        lst = batch[0].where(0)
+        logger.info("where-provenance for the prediction query is:")
+        logger.info(lst)
 
 
     # TASK 3: Implement how-provenance query for movie recommendation
 
-    # YOUR CODE HERE
+    def task6():
+        testScan1 = Scan(filepath=args.friendFile,filter = predicate1,propagate_prov=True)
+        testScan2 = Scan(filepath=args.ratingFile,propagate_prov = True)
+        testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,propagate_prov=True)
+        testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=aggrFunction,propagate_prov= True)
+        testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,propagate_prov=True)
+        testTopK = TopK(input=testOrderby,k = 1,propagate_prov=True)
+        testProject = Project(input=testTopK,fields_to_keep=[0],propagate_prov=True)
+        testOutput=[]
+        while True:
+            batch = testProject.get_next()
+            if batch == None: break
+            testOutput += batch
+        logger.info("How-provenance for the recommendation query is:")
+        logger.info(testOutput[0].how())
 
 
     # TASK 4: Retrieve most responsible tuples for movie recommendation
 
-    # YOUR CODE HERE
+    def task7():
+        testScan1 = Scan(filepath=args.friendFile,filter = predicate1,track_prov = True,propagate_prov=True)
+        testScan2 = Scan(filepath=args.ratingFile,track_prov=True,propagate_prov = True)
+        testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,track_prov=True,propagate_prov=True)
+        testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=aggrFunction,track_prov=True,propagate_prov= True)
+        testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,track_prov=True,propagate_prov=True)
+        testTopK = TopK(input=testOrderby,k = 1,track_prov=True,propagate_prov=True)
+        testProject = Project(input=testTopK,fields_to_keep=[0],track_prov = True,propagate_prov=True)
+        testOutput=[]
+        while True:
+            batch = testProject.get_next()
+            if batch == None: break
+            testOutput += batch
+        logger.info("Responsibilit of lineage tuples in the recommendation query are:")
+        logger.info(testOutput[0].responsible_inputs())
+
+    eval("task" + str(args.task_num))()

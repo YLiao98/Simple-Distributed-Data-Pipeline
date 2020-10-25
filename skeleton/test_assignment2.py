@@ -102,7 +102,7 @@ def testTask1Example():
     lst = first_tuple.lineage()
     for each in lst:
         lin.append(each.tuple)
-    assert len(res)==1 and lin ==[('0','1'),('1','10','5'),('0','4'),('4','10','8'),('0','18'),('18','10','2')]
+    assert len(res)==1 and lin ==[('0','1'),('1','10','5'),('0','2'),('2','10','3')]
 
 def testWhere_scan():
     testScan1 = Scan(filepath="../data/test1.txt",track_prov=True)
@@ -280,3 +280,26 @@ def testHow_task3():
         testOutput += batch
 
     assert testOutput[0].how() == "AVG((f15635*r218353@5))"
+'''  
+def testResponsible_task4():
+    def testAgg(input):
+        return round(sum(input)/len(input),1)
+    def predicate(input):
+        return input[0] == "0"
+    def predicate3(input):
+        return input[0] == "66"
+    testScan1 = Scan(filepath="../data/text3.txt",filter = predicate,track_prov = True,propagate_prov=True)
+    testScan2 = Scan(filepath="../data/text4.txt",track_prov=True,propagate_prov = True)
+    testJoin = Join(left_input=testScan1,right_input=testScan2,left_join_attribute=1,right_join_attribute=0,track_prov=True,propagate_prov=True)
+    testGroupby = GroupBy(input = testJoin,key=3,value=4,agg_fun=testAgg,track_prov=True,propagate_prov= True)
+    testOrderby = OrderBy(input = testGroupby,comparator=lambda x:x.tuple[1],ASC=False,track_prov=True,propagate_prov=True)
+    testTopK = TopK(input=testOrderby,k = 1,track_prov=True,propagate_prov=True)
+    testProject = Project(input=testTopK,fields_to_keep=[0],track_prov = True,propagate_prov=True)
+    testOutput=[]
+    while True:
+        batch = testProject.get_next()
+        if batch == None: break
+        testOutput += batch
+
+    assert str(testOutput[0].responsible_inputs()) == "[(('0', '1'), 0.5), (('1', '10', '5'), 0.5), (('0', '2'), 0.5), (('2', '10', '3'), 0.5)]"
+    '''
