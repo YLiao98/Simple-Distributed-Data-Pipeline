@@ -1,46 +1,32 @@
-# This repository contains solutions to the CS591 L1 assignments 
+# Assignment 3 Submission
 
-## Pre-requisites for running queries:
+## Pre-requisites for running this assignment
 
 1. Python (3.7+)
 2. [Pytest](https://docs.pytest.org/en/stable/)
-3. [Ray](https://ray.io)
+3. [LightGBM](https://github.com/microsoft/LightGBM)
+4. [LIME](https://github.com/marcotcr/lime)
+5. [SHAP](https://github.com/slundberg/shap)
+6. [pandas](https://pypi.org/project/pandas/)
 
-## Input Data
 
-Queries of assignments 1 and 2 expect two space-delimited text files (similar to CSV files). 
+## Running tasks of assignment
 
-The first file (friends) must include records of the form:
-
-|UID1 (int)|UID2 (int)|
-|----|----|
-|1   |2342|
-|231 |3   |
-|... |... |
-
-The second file (ratings) must include records of the form:
-
-|UID (int)|MID (int)|RATING (int)|
-|---|---|------|
-|1  |10 |4     |
-|231|54 |2     |
-|...|...|...   |
-
-## Running queries of Assignment 1
-
-You can run queries as shown below: 
+You can run task as shown below: 
 
 ```bash
-$ python assignment_12.py --task [task_number] --friends [path_to_friends_file.txt] --ratings [path_to_ratings_file.txt] --uid [user_id] --mid [movie_id]
+$ python assignment3.py --task [task_number] --data [path_to_dataset]
 ```
-
-For example, the following command runs the 'likeness prediction' query of the first task for user id 10 and movie id 3:
+For example, the following command runs the fourth task 
 
 ```bash
-$ python assignment_12.py --task 1 --friends friends.txt --ratings ratings.txt --uid 10 --mid 3
+$ python assignment3.py --task 3 --data "../click_ad_data/train.csv"
 ```
-Note that movie id is not needed in task 2. The 'recommendation' query of the second task does not require a movie id. If you provide a `--mid` argument, it will be simply ignored.
 
-## Running queries of Assignment 2
+Notice that *--task 3*    runs the fourth task. 
 
-TODO
+### Key Information
+
+1. Data Preprocessing and Scanning the dataset could take a long time (10~30 seconds)
+2. The Task 2 ETL operations in assignment description does not require printing results, therefore this operation is implemeted but showing, we can only see results from running Task 3 and 4
+3. Task1 is defined in runTask1(), Task3 is defined in runTask2(), Task4 is defined in runTask3()
