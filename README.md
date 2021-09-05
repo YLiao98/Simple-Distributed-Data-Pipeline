@@ -1,4 +1,4 @@
-# This repository contains solutions to the CS591 L1 assignments 
+# Query Processing Algorithms and Data-Provenance-Tracking
 
 ## Pre-requisites for running queries:
 
